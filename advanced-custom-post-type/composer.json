@@ -1,0 +1,62 @@
+{
+  "name": "mauretto78/advanced-custom-post-type",
+  "type": "wordpress-plugin",
+  "description": "The complete dynamic data framework for Wordpress",
+  "keywords": ["custom post type", "taxonomy", "meta field", "wordpress", "php"],
+  "homepage": "https://github.com/mauretto78/advanced-custom-post-type",
+  "license": "MIT",
+  "support": {
+    "issues": "https://github.com/mauretto78/advanced-custom-post-type/issues"
+  },
+  "authors": [
+    {
+      "name": "Mauro Cassani",
+      "email": "maurocassani1978@gmail.com",
+      "homepage": "https://github.com/mauretto78"
+    }
+  ],
+  "autoload": {
+    "psr-4": {
+      "ACPT\\": "src/"
+    }
+  },
+  "minimum-stability":  "dev",
+  "autoload-dev": {
+    "psr-4": { "ACPT\\Tests\\": "tests/" }
+  },
+  "require": {
+    "php": ">=7.4",
+    "webmozart/assert": "^1.10",
+    "ezyang/htmlpurifier": "^4.13",
+    "swaggest/json-schema": "^0.12.39",
+    "sepia/po-parser": "dev-master",
+    "symfony/yaml": "5.4.x-dev",
+    "phpfastcache/phpfastcache": "v8.x-dev",
+    "firebase/php-jwt": "6.10.0",
+    "anthonymartin/geo-location": "dev-master",
+    "endroid/qr-code": "4.6.1",
+    "twig/twig": "^3.0",
+    "picqer/php-barcode-generator": "2.4.0",
+    "giggsey/libphonenumber-for-php-lite": "^9.0",
+    "erusev/parsedown": "dev-master"
+  },
+  "require-dev": {
+    "phpunit/phpunit": "^8.2",
+    "phpstan/phpstan": "2.1.x-dev",
+    "szepeviktor/phpstan-wordpress": "2.x-dev"
+  },
+  "scripts": {
+    "qrcode-patcher": [
+      "php qrcode-patcher.php"
+    ],
+    "twig-patcher": [
+      "php twig-patcher.php"
+    ],
+    "remove-platform-check": [
+      "php remove-platform-check.php"
+    ],
+    "fix-assets-loading": [
+      "php fix-assets-loading.php"
+    ]
+  }
+}

@@ -1,0 +1,57 @@
+<?php
+
+namespace ACPT\Core\CQRS\Command;
+
+use ACPT\Constants\MetaTypes;
+use ACPT\Core\Models\Meta\MetaGroupModel;
+
+class SaveUserMetaCommand extends AbstractSaveMetaCommand implements CommandInterface
+{
+	/**
+	 * @var
+	 */
+	protected $userId;
+
+	/**
+	 * @var MetaGroupModel[]
+	 */
+	protected array $metaGroups;
+
+	/**
+	 * SaveUserMetaCommand constructor.
+	 *
+	 * @param $userId
+	 * @param array $metaGroups
+	 * @param array $data
+	 */
+	public function __construct($userId, array $metaGroups = [], array $data = [])
+	{
+		parent::__construct($data);
+		$this->userId     = $userId;
+		$this->metaGroups = $metaGroups;
+	}
+
+	/**
+	 * @return bool|mixed|void
+	 * @throws \Exception
+	 */
+	public function execute()
+	{
+		$user_id = $this->userId;
+
+		if ( !current_user_can( 'edit_user', $user_id ) ){
+			return false;
+		}
+
+		foreach ($this->metaGroups as $metaGroup){
+			foreach ($metaGroup->getBoxes() as $boxModel){
+				foreach ($boxModel->getFields() as $fieldModel){
+					if($this->hasField($fieldModel)){
+						$fieldModel->setBelongsToLabel(MetaTypes::USER);
+						$this->saveField($fieldModel, $this->userId, MetaTypes::USER);
+					}
+				}
+			}
+		}
+	}
+}

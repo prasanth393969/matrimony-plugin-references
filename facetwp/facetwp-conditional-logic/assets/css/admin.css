@@ -1,0 +1,258 @@
+/* Action buttons */
+
+body.settings_page_fwpcl-admin {
+    background: #fff;
+}
+
+.facetwp-region .ruleset-label {
+    display: inline-block;
+    min-width: 40px;
+    padding: 0 6px;
+    outline: none;
+    cursor: text;
+}
+
+.facetwp-region .ruleset-label::after {
+    display: inline-block;
+    font-family: dashicons;
+    content: \f327;
+    width: 20px;
+    height: 20px;
+}
+
+.facetwp-region .ruleset-label:focus,
+.facetwp-region .ruleset-label:hover {
+    background-color: #ffff8b;
+}
+
+.facetwp-region input.export-code {
+    width: 100%;
+    background-color: #eee;
+}
+
+.facetwp-region textarea.import-code {
+    white-space: normal;
+}
+
+.facetwp-region-settings .fwpcl-import-response {
+    display: inline-block;
+    padding: 6px 0 0 6px;
+}
+
+.fwpcl-response {
+    display: none;
+    margin-left: 10px;
+    padding: 4px 0 0 0;
+}
+
+.sortable-placeholder {
+    border: 1px dashed #333;
+    padding: 10px;
+}
+
+.hidden {
+    display: none;
+}
+
+/* Ruleset tables */
+
+.facetwp-content-wrap {
+    margin-top: 20px;
+}
+
+.facetwp-region-rulesets table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.ruleset {
+    border: 1px solid #ddd;
+    margin-bottom: 20px;
+}
+
+.ruleset.collapsed table.logic-row {
+    display: none;
+}
+
+table.logic-row td.conditions-col,
+table.logic-row td.actions-col {
+    padding: 10px;
+    width: 60%;
+}
+
+table.logic-row td.actions-col {
+    padding-left: 0;
+    width: 40%;
+}
+
+.ruleset.collapsed .header-bar {
+    border-bottom: none;
+}
+
+.ruleset td {
+    vertical-align: top;
+    background-color: #f1f1f1;
+    padding: 0;
+}
+
+table.header-bar {
+    border-bottom: 1px solid #ddd;
+    cursor: pointer;
+}
+
+table.header-bar td {
+    background-color: #fff;
+}
+
+table.header-bar td.drag,
+table.header-bar td.active,
+table.header-bar td.edit,
+table.header-bar td.expand,
+table.header-bar td.delete {
+    width: 32px;
+}
+
+.header-bar .title {
+    line-height: 20px;
+    padding: 6px;
+}
+
+table.header-bar td.active {
+    padding-top: 6px;
+    text-align: center;
+}
+
+table.header-bar td.active input[type="checkbox"] {
+    margin: 0;
+}
+
+table.header-bar td.drag {
+    border-right: 1px solid #ddd;
+    cursor: move;
+}
+
+table.header-bar td.edit {
+    border-right: 1px solid #ddd;
+}
+
+table.header-bar td.expand,
+table.header-bar td.delete {
+    border-left: 1px solid #ddd;
+}
+
+table.header-bar td.delete {
+    color: #a00;
+}
+
+.ruleset .td-label {
+    padding: 6px 12px;
+    background-color: #906FBC;
+    border: 1px solid #ddd;
+    border-bottom: none;
+    color: #fff;
+}
+
+.ruleset .condition-wrap,
+.ruleset .action-wrap,
+.ruleset .action-else-table {
+    border: 1px solid #ddd;
+    border-top: none;
+}
+
+.button.condition-and,
+.button.action-and {
+    margin-top: 10px;
+}
+
+.dashicons {
+    line-height: 22px;
+    padding: 6px;
+    cursor: pointer;
+}
+
+table.condition,
+table.action,
+table.action-else-table {
+    border-top: 1px solid #ddd;
+}
+
+table.condition:last-child,
+table.action:last-child,
+table.action-else-table:last-child {
+    border-bottom: none;
+}
+
+table.condition td,
+table.ruleset-event td,
+table.action td,
+table.action-else-table td {
+    background-color: #fff;
+}
+
+table.condition.type-or td.spacer {
+    width: 32px;
+}
+
+table.condition.type-or td.type {
+    width: 32px;
+}
+
+table.condition td.drop,
+table.action td.drop,
+table.action-else-table td.drop {
+    width: 32px;
+    vertical-align: middle;
+    color: #a00;
+}
+
+table.condition td.type,
+table.ruleset-event td.type,
+table.action td.type,
+table.action-else-table td.type {
+    width: 64px;
+    text-align: center;
+    background-color: #f8f8f8;
+    border-left: 1px solid #ddd;
+    border-right: 1px solid #ddd;
+    vertical-align: middle;
+}
+
+table.ruleset-event td.type {
+    width: 32px;
+    border-left: none;
+}
+
+.conditions-col td.logic {
+    display: grid;
+    grid-template-columns: 180px 60px 1fr;
+    grid-gap: 10px;
+    padding: 5px;
+}
+
+.actions-col td.logic {
+    display: grid;
+    grid-template-columns: 90px 1fr;
+    grid-gap: 10px;
+    padding: 5px;
+}
+
+.conditions-col td.logic select,
+.conditions-col td.logic input,
+.action-wrap td.logic select,
+.action-wrap td.logic input {
+    width: 100%;
+}
+
+table.action .action-selector {
+    grid-column: 1 / 3;
+    grid-row: 2;
+    height: 60px;
+    font-size: 0.9em;
+}
+
+table.condition td.btn {
+    width: 48px;
+    text-align: center;
+    border-left: 1px solid #ddd;
+    vertical-align: middle;
+}

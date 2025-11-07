@@ -1,0 +1,1 @@
+import{u as a}from"./fields-wnm5Jtc6.js";const e=[{label:a("Select"),value:null},{label:"Publish",value:"publish"},{label:"Future",value:"future"},{label:"Draft",value:"draft"},{label:"Pending",value:"pending"},{label:"Private",value:"private"},{label:"Trash",value:"trash"},{label:"Auto-Draft",value:"auto-draft"}];export{e as p};

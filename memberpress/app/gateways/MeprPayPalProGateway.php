@@ -1,0 +1,1732 @@
+<?php
+
+if (!defined('ABSPATH')) {
+    die('You are not allowed to call this page directly.');
+}
+
+class MeprPayPalProGateway extends MeprBasePayPalGateway
+{
+    /**
+     * The string identifier for PayPal token in user meta and subscription meta
+     *
+     * @var string
+     */
+    public static $paypal_token_str = '_mepr_paypal_pro_token';
+
+    /**
+     * The gateway key identifier
+     *
+     * @var string
+     */
+    public $key;
+
+    /**
+     * Used in the view to identify the gateway
+     */
+    public function __construct()
+    {
+        $this->name         = 'PayPal Payments Pro';
+        $this->key          = 'paypalpro';
+        $this->has_spc_form = false;
+        $this->set_defaults();
+
+        $this->capabilities = [
+            'process-payments',
+            'process-refunds',
+            'create-subscriptions',
+            'cancel-subscriptions',
+            'update-subscriptions',
+            'suspend-subscriptions',
+            'resume-subscriptions',
+            'subscription-trial-payment',
+        ];
+
+        // Setup the notification actions for this gateway.
+        $this->notifiers = [
+            'ipn'    => 'listener',
+            'cancel' => 'cancel_handler',
+            'return' => 'return_handler',
+        ];
+
+        $this->message_pages = ['cancel' => 'cancel_message'];
+    }
+
+    /**
+     * Load the gateway settings.
+     *
+     * @param array $settings The settings to load.
+     *
+     * @return void
+     */
+    public function load($settings)
+    {
+        $this->settings = (object)$settings;
+        $this->set_defaults();
+    }
+
+    /**
+     * Set default settings for the gateway.
+     *
+     * @return void
+     */
+    protected function set_defaults()
+    {
+        if (!isset($this->settings)) {
+            $this->settings = [];
+        }
+
+        $this->settings = (object)array_merge(
+            [
+                'gateway'      => 'MeprPayPalProGateway',
+                'id'           => $this->generate_id(),
+                'label'        => '',
+                'use_label'    => true,
+                'icon'         => MEPR_IMAGES_URL . '/checkout/cards.png',
+                'use_icon'     => true,
+                'desc'         => __('Pay with your credit card via PayPal', 'memberpress'),
+                'use_desc'     => true,
+                'api_username' => '',
+                'api_password' => '',
+                'signature'    => '',
+                'sandbox'      => false,
+                'force_ssl'    => false,
+                'debug'        => false,
+            ],
+            (array)$this->settings
+        );
+
+        $this->id        = $this->settings->id;
+        $this->label     = $this->settings->label;
+        $this->use_label = $this->settings->use_label;
+        $this->icon      = $this->settings->icon;
+        $this->use_icon  = $this->settings->use_icon;
+        $this->desc      = $this->settings->desc;
+        $this->use_desc  = $this->settings->use_desc;
+
+        if ($this->is_test_mode()) {
+            $this->settings->url     = 'https://ipnpb.sandbox.paypal.com/cgi-bin/webscr';
+            $this->settings->api_url = 'https://api-3t.sandbox.paypal.com/nvp';
+        } else {
+            $this->settings->url     = 'https://ipnpb.paypal.com/cgi-bin/webscr';
+            $this->settings->api_url = 'https://api-3t.paypal.com/nvp';
+        }
+
+        $this->settings->api_version = 69;
+
+        // An attempt to correct people who paste in spaces along with their credentials.
+        $this->settings->api_username = trim($this->settings->api_username);
+        $this->settings->api_password = trim($this->settings->api_password);
+        $this->settings->signature    = trim($this->settings->signature);
+    }
+
+    /**
+     * Process the IPN request from PayPal.
+     *
+     * @return boolean True if the IPN is processed successfully, false otherwise.
+     */
+    public function listener()
+    {
+        $_POST = wp_unslash($_POST);
+        $this->email_status("PayPal IPN Recieved\n" . MeprUtils::object_to_string($_POST, true) . "\n", $this->settings->debug);
+
+        if ($this->validate_ipn()) {
+            return $this->process_ipn();
+        }
+
+        return false;
+    }
+
+    /**
+     * Processes the IPN request from PayPal.
+     *
+     * @return boolean True if the IPN is processed successfully, false otherwise.
+     */
+    private function process_ipn()
+    {
+        if (
+            isset($_POST['txn_type']) &&
+            (strtolower(sanitize_text_field(wp_unslash($_POST['txn_type']))) === 'recurring_payment' ||
+            strtolower(sanitize_text_field(wp_unslash($_POST['txn_type']))) === 'subscr_payment')
+        ) {
+            $this->record_subscription_payment();
+        } elseif (
+            (isset($_POST['txn_type']) &&
+             in_array(
+                 strtolower(sanitize_text_field(wp_unslash($_POST['txn_type']))),
+                 [
+                     'recurring_payment_skipped',
+                     'subscr_failed',
+                 ],
+                 true
+             )) ||
+             (isset($_POST['payment_status']) &&
+              in_array(
+                  strtolower($_POST['payment_status']),
+                  ['denied','expired','failed'],
+                  true
+              ))
+        ) {
+            $this->record_payment_failure();
+        } elseif (
+            isset($_POST['txn_type']) &&
+             strtolower(sanitize_text_field(wp_unslash($_POST['txn_type']))) === 'recurring_payment_profile_cancel'
+        ) {
+            $this->record_cancel_subscription();
+        } elseif (
+            isset($_POST['txn_type']) &&
+             strtolower(sanitize_text_field(wp_unslash($_POST['txn_type']))) === 'recurring_payment_suspended'
+        ) {
+            $this->record_suspend_subscription();
+        } elseif (isset($_POST['parent_txn_id']) && !isset($_POST['txn_type'])) {
+            if (in_array(strtolower($_POST['payment_status']), ['refunded','reversed','voided'], true)) {
+                return $this->record_refund();
+            }
+        }
+    }
+
+    /**
+     * Used to record a successful recurring payment by the given gateway. It
+     * should have the ability to record a successful payment or a failure. It is
+     * this method that should be used when receiving an IPN from PayPal or a
+     * Silent Post from Authorize.net.
+     */
+    public function record_subscription_payment()
+    {
+        if (!isset($_POST['recurring_payment_id']) && !isset($_POST['subscr_id'])) {
+            return;
+        }
+
+        if (isset($_POST['subscr_id']) && !empty($_POST['subscr_id'])) {
+            $sub = MeprSubscription::get_one_by_subscr_id(sanitize_text_field(wp_unslash($_POST['subscr_id'])));
+        } else {
+            $sub = MeprSubscription::get_one_by_subscr_id(sanitize_text_field(wp_unslash($_POST['recurring_payment_id'])));
+        }
+
+        if ($sub) {
+            $timestamp = isset($_POST['payment_date']) ? strtotime(sanitize_text_field(wp_unslash($_POST['payment_date']))) : time();
+            $first_txn = $sub->first_txn();
+
+            if (!($first_txn instanceof MeprTransaction)) {
+                $first_txn             = new MeprTransaction();
+                $first_txn->user_id    = $sub->user_id;
+                $first_txn->product_id = $sub->product_id;
+                $first_txn->coupon_id  = $sub->coupon_id;
+            }
+
+            // Prevent recording duplicates.
+            $existing_txn = MeprTransaction::get_one_by_trans_num(sanitize_text_field(wp_unslash($_POST['txn_id'] ?? '')));
+            if (
+                isset($existing_txn->id) &&
+                $existing_txn->id > 0 &&
+                in_array($existing_txn->status, [MeprTransaction::$complete_str, MeprTransaction::$confirmed_str], true)
+            ) {
+                return;
+            }
+
+            // If this is a trial payment, let's just convert the confirmation txn into a payment txn
+            // then we won't have to mess with setting expires_at as it was already handled.
+            if ($this->is_subscr_trial_payment($sub)) {
+                $txn             = $first_txn; // For use below in send notices.
+                $txn->created_at = MeprUtils::ts_to_mysql_date($timestamp);
+                $txn->gateway    = $this->id;
+                $txn->set_gross(sanitize_text_field(wp_unslash($_POST['mc_gross'] ?? '')));
+                $txn->trans_num       = sanitize_text_field(wp_unslash($_POST['txn_id'] ?? ''));
+                $txn->txn_type        = MeprTransaction::$payment_str;
+                $txn->status          = MeprTransaction::$complete_str;
+                $txn->subscription_id = $sub->id;
+                $txn->store();
+            } else {
+                $txn             = new MeprTransaction();
+                $txn->created_at = MeprUtils::ts_to_mysql_date($timestamp);
+                $txn->user_id    = $first_txn->user_id;
+                $txn->product_id = $first_txn->product_id;
+                $txn->coupon_id  = $first_txn->coupon_id;
+                $txn->gateway    = $this->id;
+                $txn->set_gross(sanitize_text_field(wp_unslash($_POST['mc_gross'] ?? '')));
+                $txn->trans_num       = sanitize_text_field(wp_unslash($_POST['txn_id'] ?? ''));
+                $txn->txn_type        = MeprTransaction::$payment_str;
+                $txn->status          = MeprTransaction::$complete_str;
+                $txn->subscription_id = $sub->id;
+                $txn->store();
+
+                // Check that the subscription status is still enabled.
+                if ($sub->status !== MeprSubscription::$active_str) {
+                    $sub->status = MeprSubscription::$active_str;
+                    $sub->store();
+                }
+
+                // Not waiting for an IPN here bro ... just making it happen even though
+                // the total occurrences is already capped in record_create_subscription().
+                $sub->limit_payment_cycles();
+            }
+
+            $this->email_status(
+                "Subscription Transaction\n" .
+                          MeprUtils::object_to_string($txn->rec, true),
+                $this->settings->debug
+            );
+
+            MeprUtils::send_transaction_receipt_notices($txn);
+
+            return $txn;
+        }
+
+        return false;
+    }
+
+    /**
+     * Used to record a declined payment.
+     */
+    public function record_payment_failure()
+    {
+        // phpcs:disable Generic.CodeAnalysis.AssignmentInCondition.Found
+        if (isset($_POST['ipn_track_id']) && $txn_res = MeprTransaction::get_one_by_trans_num(sanitize_text_field(wp_unslash($_POST['ipn_track_id']))) && isset($txn_res->id)) {
+            return false; // We've already recorded this failure duh - don't send more emails.
+        } elseif (isset($_POST['txn_id']) && $txn_res = MeprTransaction::get_one_by_trans_num(sanitize_text_field(wp_unslash($_POST['txn_id']))) && isset($txn_res->id)) {
+            $txn         = new MeprTransaction($txn_res->id);
+            $txn->status = MeprTransaction::$failed_str;
+            $txn->store();
+        } elseif (
+            (isset($_POST['recurring_payment_id']) &&
+            $sub = MeprSubscription::get_one_by_subscr_id(sanitize_text_field(wp_unslash($_POST['recurring_payment_id']))) ) ||
+            (isset($_POST['subscr_id']) &&
+            $sub = MeprSubscription::get_one_by_subscr_id(sanitize_text_field(wp_unslash($_POST['subscr_id']))))
+        ) {
+            $first_txn = $sub->first_txn();
+
+            if (!($first_txn instanceof MeprTransaction)) {
+                $coupon_id = $sub->coupon_id;
+            } else {
+                $coupon_id = $first_txn->coupon_id;
+            }
+
+            $txn = new MeprTransaction();
+            $txn->set_gross(isset($_POST['mc_gross']) ? sanitize_text_field(wp_unslash($_POST['mc_gross'])) : (isset($_POST['amount']) ? sanitize_text_field(wp_unslash($_POST['amount'])) : 0.00));
+            $txn->user_id         = $sub->user_id;
+            $txn->product_id      = $sub->product_id;
+            $txn->coupon_id       = $coupon_id;
+            $txn->txn_type        = MeprTransaction::$payment_str;
+            $txn->status          = MeprTransaction::$failed_str;
+            $txn->subscription_id = $sub->id;
+            // If ipn_track_id isn't set then just use uniqid.
+            $txn->trans_num = ( isset($_POST['ipn_track_id']) ? sanitize_text_field(wp_unslash($_POST['ipn_track_id'])) : uniqid() );
+            $txn->gateway   = $this->id;
+            $txn->store();
+
+            $sub->expire_txns(); // Expire associated transactions for the old subscription.
+            $sub->store();
+        } else {
+            return false; // Nothing we can do here ... so we outta here.
+        }
+
+        MeprUtils::send_failed_txn_notices($txn);
+
+        return $txn;
+        // phpcs:enable Generic.CodeAnalysis.AssignmentInCondition.Found
+    }
+
+    /**
+     * Used to send data to a given payment gateway. In gateways which redirect
+     * before this step is necessary this method should just be left blank.
+     *
+     * @param MeprTransaction $txn The transaction to process.
+     *
+     * @return MeprTransaction|false The processed transaction or false on failure.
+     * @throws MeprGatewayException If the payment is unsuccessful.
+     */
+    public function process_payment($txn)
+    {
+        if (isset($txn) and $txn instanceof MeprTransaction) {
+            $usr = $txn->user();
+            $prd = $txn->product();
+        } else {
+            throw new MeprGatewayException(esc_html__('Payment was unsuccessful, please check your payment details and try again.', 'memberpress'));
+        }
+
+        $mepr_options = MeprOptions::fetch();
+
+        $prd = $txn->product();
+        $sub = $txn->subscription();
+        $usr = $txn->user();
+
+        $args = MeprHooks::apply_filters('mepr_paypal_pro_payment_args', [
+            // Pass payment amount and action.
+            'AMT'            => MeprUtils::format_float($txn->total),
+            'CURRENCYCODE'   => $mepr_options->currency_code,
+            'PAYMENTACTION'  => 'Sale',
+            'CREDITCARDTYPE' => sanitize_text_field(wp_unslash($_REQUEST['mepr-cc-type'] ?? '')),
+            'INVNUM'         => $txn->id,
+
+            // Pass Credit Card Info.
+            'ACCT'           => sanitize_text_field(wp_unslash($_REQUEST['mepr_cc_num'] ?? '')),
+            'EXPDATE'        => sprintf('%02d', sanitize_text_field(wp_unslash($_REQUEST['mepr_cc_exp_month'] ?? ''))) . sprintf('%04d', sanitize_text_field(wp_unslash($_REQUEST['mepr_cc_exp_year'] ?? ''))),
+            'CVV2'           => sanitize_text_field(wp_unslash($_REQUEST['mepr_cvv_code'] ?? '')),
+
+            // Pass User Info.
+            'EMAIL'          => $usr->user_email,
+            'FIRSTNAME'      => MeprUtils::sanitize_name_field(wp_unslash($_REQUEST['mepr_first_name'] ?? '')), // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+            'LASTNAME'       => MeprUtils::sanitize_name_field(wp_unslash($_REQUEST['mepr_last_name'] ?? '')), // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+            'STREET'         => sanitize_text_field(wp_unslash($_REQUEST['mepr-address-one'] ?? '')) . ' ' . sanitize_text_field(wp_unslash($_REQUEST['mepr-address-two'] ?? '')),
+            'CITY'           => sanitize_text_field(wp_unslash($_REQUEST['mepr-address-city'] ?? '')),
+            'STATE'          => sanitize_text_field(wp_unslash($_REQUEST['mepr-address-state'] ?? '')),
+            'ZIP'            => sanitize_text_field(wp_unslash($_REQUEST['mepr-address-zip'] ?? '')),
+            'COUNTRYCODE'    => sanitize_text_field(wp_unslash($_REQUEST['mepr-address-country'] ?? '')),
+            'IPADDRESS'      => sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR'] ?? '')),
+            'BUTTONSOURCE'   => 'Caseproof_SP',
+        ], $txn);
+
+        if (empty($usr->first_name) || empty($usr->last_name)) {
+            $usr->first_name = MeprUtils::sanitize_name_field(wp_unslash($_REQUEST['mepr_first_name'])); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+            $usr->last_name  = MeprUtils::sanitize_name_field(wp_unslash($_REQUEST['mepr_last_name'])); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+            update_user_meta($usr->ID, 'first_name', $usr->first_name);
+            update_user_meta($usr->ID, 'last_name', $usr->last_name);
+        }
+
+        if (!$usr->address_is_set()) {
+            $usr->set_address($_REQUEST);
+        }
+
+        // $this->email_status("DoDirectPayment Request:\n".MeprUtils::object_to_string($args,true)."\n", $this->settings->debug);
+        $res = $this->send_nvp_request('DoDirectPayment', $args);
+        // $this->email_status("DoDirectPayment Response:\n".MeprUtils::object_to_string($res,true)."\n", $this->settings->debug);
+        if (!isset($res['ACK']) || strtoupper($res['ACK']) !== 'SUCCESS') {
+            throw new MeprGatewayException(sprintf(
+                // Translators: %s: error message.
+                esc_html__('The payment was unsuccessful. %s', 'memberpress'),
+                esc_html($this->error_str($res))
+            ));
+        }
+
+        $_REQUEST['paypal_response'] = $res;
+        $_REQUEST['transaction']     = $txn;
+
+        return $this->record_payment();
+    }
+
+    /**
+     * Used to record a successful payment by the given gateway. It should have
+     * the ability to record a successful payment or a failure. It is this method
+     * that should be used when receiving an IPN from PayPal or a Silent Post
+     * from Authorize.net.
+     *
+     * @return MeprTransaction|boolean
+     */
+    public function record_payment()
+    {
+        if (!isset($_REQUEST['paypal_response']) || !isset($_REQUEST['transaction'])) {
+            return false;
+        }
+
+        $res = wp_unslash($_REQUEST['paypal_response']); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+        $txn = wp_unslash($_REQUEST['transaction']); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+
+        if ($txn->status === MeprTransaction::$complete_str) {
+            return false;
+        }
+
+        if (strtolower($res['ACK']) === 'success') {
+            $txn->trans_num = $res['TRANSACTIONID'];
+            $txn->txn_type  = MeprTransaction::$payment_str;
+            $txn->status    = MeprTransaction::$complete_str;
+
+            // This will only work before maybe_cancel_old_sub is run.
+            $upgrade   = $txn->is_upgrade();
+            $downgrade = $txn->is_downgrade();
+
+            $event_txn = $txn->maybe_cancel_old_sub();
+            $txn->store();
+
+            $this->email_status("Transaction\n" . MeprUtils::object_to_string($txn->rec, true) . "\n", $this->settings->debug);
+
+            $prd = $txn->product();
+
+            if ($prd->period_type === 'lifetime') {
+                if ($upgrade) {
+                    $this->upgraded_sub($txn, $event_txn);
+                } elseif ($downgrade) {
+                    $this->downgraded_sub($txn, $event_txn);
+                } else {
+                    $this->new_sub($txn);
+                }
+
+                MeprUtils::send_signup_notices($txn);
+            }
+
+            MeprUtils::send_transaction_receipt_notices($txn);
+
+            return $txn;
+        }
+
+        return false;
+    }
+
+    /**
+     * This method should be used by the class to record a successful refund from
+     * the gateway. This method should also be used by any IPN requests or Silent Posts.
+     *
+     * @param MeprTransaction $txn The transaction to record.
+     *
+     * @return MeprTransaction|boolean
+     * @throws MeprGatewayException If the refund is unsuccessful.
+     */
+    public function process_refund(MeprTransaction $txn)
+    {
+        $mepr_options = MeprOptions::fetch();
+
+        $args = MeprHooks::apply_filters('mepr_paypal_pro_refund_args', [
+            'TRANSACTIONID' => $txn->trans_num,
+            'REFUNDTYPE'    => 'Full',
+            'CURRENCYCODE'  => $mepr_options->currency_code,
+        ], $txn);
+
+        $this->email_status("RefundTransaction Request:\n" . MeprUtils::object_to_string($args, true) . "\n", $this->settings->debug);
+
+        $res = $this->send_nvp_request('RefundTransaction', $args);
+
+        $this->email_status("RefundTransaction Response:\n" . MeprUtils::object_to_string($res, true) . "\n", $this->settings->debug);
+
+        if (!isset($res['ACK']) || strtoupper($res['ACK']) !== 'SUCCESS') {
+            throw new MeprGatewayException(sprintf(
+                // Translators: %s: error message.
+                esc_html__('The refund was unsuccessful. %s', 'memberpress'),
+                esc_html($this->error_str($res))
+            ));
+        }
+
+        $_POST['parent_txn_id'] = $txn->id;
+        return $this->record_refund();
+    }
+
+    /**
+     * This method should be used by the class to record a successful refund from
+     * the gateway. This method should also be used by any IPN requests or Silent Posts.
+     *
+     * @return MeprTransaction|boolean The recorded transaction or false on failure.
+     */
+    public function record_refund()
+    {
+        $obj = MeprTransaction::get_one_by_trans_num(sanitize_text_field(wp_unslash($_POST['parent_txn_id'] ?? '')));
+
+        if (!is_null($obj) && (int)$obj->id > 0) {
+            $txn = new MeprTransaction($obj->id);
+
+            // Seriously ... if txn was already refunded what are we doing here?
+            if ($txn->status === MeprTransaction::$refunded_str) {
+                return $txn;
+            }
+
+            $txn->status = MeprTransaction::$refunded_str;
+
+            $this->email_status("Processing Refund: \n" . MeprUtils::object_to_string($_POST) . "\n Affected Transaction: \n" . MeprUtils::object_to_string($txn), $this->settings->debug);
+
+            $txn->store();
+
+            MeprUtils::send_refunded_txn_notices($txn);
+
+            return $txn;
+        }
+
+        return false;
+    }
+
+    // Not needed in PayPal since PayPal supports the trial payment inclusive of the Subscription.
+    /**
+     * Processes the trial payment.
+     *
+     * @param MeprTransaction $transaction The transaction to process.
+     *
+     * @return void
+     */
+    public function process_trial_payment($transaction)
+    {
+    }
+
+    /**
+     * Records the trial payment.
+     *
+     * @param MeprTransaction $transaction The transaction to record.
+     *
+     * @return void
+     */
+    public function record_trial_payment($transaction)
+    {
+    }
+
+    /**
+     * Used to send subscription data to a given payment gateway. In gateways
+     * which redirect before this step is necessary this method should just be
+     * left blank.
+     *
+     * @param MeprTransaction $txn The transaction for the subscription.
+     *
+     * @return array The subscription and transaction details.
+     */
+    public function process_create_subscription($txn)
+    {
+        $mepr_options = MeprOptions::fetch();
+        $prd          = $txn->product();
+        $sub          = $txn->subscription();
+        $usr          = $txn->user();
+        $tkn          = $sub->token; // Pretty sure this isn't used.
+
+        // IMPORTANT - PayPal txn will fail if the descriptions do not match exactly
+        // so if you change the description here you also need to mirror it
+        // inside of process_signup_form().
+        $desc = $this->paypal_desc($txn);
+
+        // Default to 0 for infinite occurrences.
+        $total_occurrences = $sub->limit_cycles ? $sub->limit_cycles_num : 0;
+
+        // Having issues with subscription start times for our friends in Australia and New Zeland
+        // There doesn't appear to be any fixes available from PayPal -- so we'll have to allow them to modify
+        // the start time via this filter if it comes to that.
+        $gmt_utc_time = MeprHooks::apply_filters('mepr_paypal_website_payments_pro_subscr_start_ts', time(), $this);
+
+        $args = [
+            'PROFILESTARTDATE'   => gmdate('Y-m-d\TH:i:s\Z', $gmt_utc_time),
+            'DESC'               => $desc,
+            'BILLINGPERIOD'      => $this->paypal_period($prd->period_type),
+            'BILLINGFREQUENCY'   => $prd->period,
+            'TOTALBILLINGCYCLES' => $total_occurrences,
+            'AMT'                => MeprUtils::format_float($txn->amount),
+            'CURRENCYCODE'       => $mepr_options->currency_code,
+            'EMAIL'              => $usr->user_email,
+            'ACCT'               => sanitize_text_field(wp_unslash($_REQUEST['mepr_cc_num'] ?? '')),
+            'EXPDATE'            => sanitize_text_field(wp_unslash($_REQUEST['mepr_cc_exp_month'] ?? '')) . sanitize_text_field(wp_unslash($_REQUEST['mepr_cc_exp_year'] ?? '')),
+            'CVV2'               => sanitize_text_field(wp_unslash($_REQUEST['mepr_cvv_code'] ?? '')),
+            'IPADDRESS'          => sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR'] ?? '')),
+            'FIRSTNAME'          => sanitize_text_field(wp_unslash($_REQUEST['mepr_first_name'] ?? '')),
+            'LASTNAME'           => sanitize_text_field(wp_unslash($_REQUEST['mepr_last_name'] ?? '')),
+            'STREET'             => sanitize_text_field(wp_unslash($_REQUEST['mepr-address-one'] ?? '')),
+            'CITY'               => sanitize_text_field(wp_unslash($_REQUEST['mepr-address-city'] ?? '')),
+            'STATE'              => sanitize_text_field(wp_unslash($_REQUEST['mepr-address-state'] ?? '')),
+            'ZIP'                => sanitize_text_field(wp_unslash($_REQUEST['mepr-address-zip'] ?? '')),
+            'COUNTRYCODE'        => sanitize_text_field(wp_unslash($_REQUEST['mepr-address-country'] ?? '')),
+        ];
+
+        if ($sub->trial) {
+            $args = array_merge(
+                [
+                    'TRIALBILLINGPERIOD'      => 'Day',
+                    'TRIALBILLINGFREQUENCY'   => $sub->trial_days,
+                    'TRIALAMT'                => $sub->trial_total,
+                    'TRIALTOTALBILLINGCYCLES' => 1,
+                ],
+                $args
+            );
+        }
+
+        $args = MeprHooks::apply_filters('mepr_paypal_pro_create_subscriptions_args', $args, $txn, $sub);
+
+        if (!$usr->address_is_set()) {
+            $usr->set_address($_REQUEST);
+        }
+
+        $this->email_status("Paypal Create Subscription \$args:\n" . MeprUtils::object_to_string($args, true) . "\n", $this->settings->debug);
+
+        $res = $this->send_nvp_request('CreateRecurringPaymentsProfile', $args);
+
+        $_REQUEST['paypal_response'] = $res;
+        $_REQUEST['transaction']     = $txn;
+        $_REQUEST['subscription']    = $sub;
+
+        return $this->record_create_subscription();
+    }
+
+    /**
+     * Used to record a successful subscription by the given gateway. It should have
+     * the ability to record a successful subscription or a failure. It is this method
+     * that should be used when receiving an IPN from PayPal or a Silent Post
+     * from Authorize.net.
+     */
+    public function record_create_subscription()
+    {
+        $res = wp_unslash($_REQUEST['paypal_response'] ?? ''); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+        $sub = wp_unslash($_REQUEST['subscription'] ?? ''); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+        $this->email_status("Paypal Create Subscription Response \$res:\n" . MeprUtils::object_to_string($res, true) . "\n", $this->settings->debug);
+
+        if (isset($res['L_ERRORCODE0']) and intval($res['L_ERRORCODE0']) === 10004) {
+            $this->send_digital_goods_error_message();
+            return false;
+        }
+
+        if (isset($res['PROFILESTATUS']) and strtolower($res['PROFILESTATUS']) === 'activeprofile') {
+            $timestamp = isset($_POST['TIMESTAMP']) ? strtotime(sanitize_text_field(wp_unslash($_POST['TIMESTAMP']))) : time();
+
+            $txn = $sub->first_txn();
+            if (!($txn instanceof MeprTransaction)) {
+                $txn             = new MeprTransaction();
+                $txn->user_id    = $sub->user_id;
+                $txn->product_id = $sub->product_id;
+            }
+
+            $old_total      = $txn->total;
+            $txn->trans_num = $res['PROFILEID'];
+            $txn->status    = MeprTransaction::$confirmed_str;
+            $txn->txn_type  = MeprTransaction::$subscription_confirmation_str;
+            $txn->set_subtotal(0.00); // Just a confirmation txn.
+
+            // At the very least the subscription confirmation transaction gives
+            // the user a 24 hour grace period so they can log in even before the
+            // paypal transaction goes through (paypal batches txns at night).
+            $mepr_options = MeprOptions::fetch();
+
+            $trial_days      = ( $sub->trial ? $sub->trial_days : $mepr_options->grace_init_days );
+            $txn->created_at = MeprUtils::ts_to_mysql_date($timestamp);
+            $txn->expires_at = MeprUtils::ts_to_mysql_date($timestamp + MeprUtils::days($trial_days), 'Y-m-d H:i:s');
+            $txn->store();
+
+            $sub->subscr_id  = $res['PROFILEID'];
+            $sub->status     = MeprSubscription::$active_str;
+            $sub->created_at = gmdate('c', $timestamp);
+
+            $sub->cc_last4     = substr(sanitize_text_field(wp_unslash($_REQUEST['mepr_cc_num'] ?? '')), -4);
+            $sub->cc_exp_month = sanitize_text_field(wp_unslash($_REQUEST['mepr_cc_exp_month'] ?? ''));
+            $sub->cc_exp_year  = sanitize_text_field(wp_unslash($_REQUEST['mepr_cc_exp_year'] ?? ''));
+
+            // This will only work before maybe_cancel_old_sub is run.
+            $upgrade   = $sub->is_upgrade();
+            $downgrade = $sub->is_downgrade();
+
+            $event_txn = $sub->maybe_cancel_old_sub();
+            $sub->store();
+
+            $this->email_status(
+                "Subscription Transaction\n" .
+                           MeprUtils::object_to_string($txn->rec, true),
+                $this->settings->debug
+            );
+
+            // $txn->set_gross($old_total); // Artificially set the old amount for notices
+            if ($upgrade) {
+                $this->upgraded_sub($sub, $event_txn);
+            } elseif ($downgrade) {
+                $this->downgraded_sub($sub, $event_txn);
+            } else {
+                $this->new_sub($sub, true);
+            }
+
+            MeprUtils::send_signup_notices($txn);
+
+            return [
+                'subscription' => $sub,
+                'transaction'  => $txn,
+            ];
+        }
+    }
+
+    /**
+     * Used to cancel a subscription by the given gateway. This method should be used
+     * by the class to record a successful cancellation from the gateway. This method
+     * should also be used by any IPN requests or Silent Posts.
+     *
+     * With PayPal, we bill the outstanding amount of the previous subscription,
+     * cancel the previous subscription and create a new subscription
+     *
+     * @param integer $sub_id The subscription ID to update.
+     *
+     * @return array The response from the update.
+     *
+     * @throws MeprGatewayException If the update is unsuccessful.
+     */
+    public function process_update_subscription($sub_id)
+    {
+        $sub = new MeprSubscription($sub_id);
+
+        $args = MeprHooks::apply_filters('mepr_paypal_pro_update_subscription_args', [
+            'PROFILEID'      => $sub->subscr_id,
+            'CREDITCARDTYPE' => sanitize_text_field(wp_unslash($_REQUEST['mepr-cc-type'] ?? '')),
+            'ACCT'           => sanitize_text_field(wp_unslash($_REQUEST['update_cc_num'] ?? '')),
+            'EXPDATE'        => sprintf('%02d', sanitize_text_field(wp_unslash($_REQUEST['update_cc_exp_month'] ?? ''))) . sprintf('%04d', sanitize_text_field(wp_unslash($_REQUEST['update_cc_exp_year'] ?? ''))),
+            'CVV2'           => sanitize_text_field(wp_unslash($_REQUEST['update_cvv_code'] ?? '')),
+        ], $sub);
+
+        $this->email_status(
+            "PayPal Update Subscription request: \n" . MeprUtils::object_to_string($args, true) . "\n",
+            $this->settings->debug
+        );
+
+        $res = $this->send_nvp_request('UpdateRecurringPaymentsProfile', $args);
+
+        if (!isset($res['ACK']) || strtoupper($res['ACK']) !== 'SUCCESS') {
+            throw new MeprGatewayException(sprintf(
+                // Translators: %s: error message.
+                esc_html__('Updating the Credit Card was unsuccessful. %s', 'memberpress'),
+                esc_html($this->error_str($res))
+            ));
+        }
+
+        $_REQUEST['res']    = $res;
+        $_REQUEST['sub_id'] = $sub_id;
+
+        return $this->record_update_subscription();
+    }
+
+    /**
+     * This method should be used by the class to record a successful cancellation
+     * from the gateway. This method should also be used by any IPN requests or
+     * Silent Posts.
+     *
+     * @return array The response from the update.
+     */
+    public function record_update_subscription()
+    {
+        $sub               = new MeprSubscription(sanitize_text_field(wp_unslash($_REQUEST['sub_id'] ?? 0)));
+        $sub->cc_last4     = substr(sanitize_text_field(wp_unslash($_REQUEST['update_cc_num'] ?? '')), -4);
+        $sub->cc_exp_month = sanitize_text_field(wp_unslash($_REQUEST['update_cc_exp_month'] ?? ''));
+        $sub->cc_exp_year  = sanitize_text_field(wp_unslash($_REQUEST['update_cc_exp_year'] ?? ''));
+        $sub->store();
+
+        return wp_unslash($_REQUEST['res'] ?? ''); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+    }
+
+    /**
+     * Used to suspend a subscription by the given gateway.
+     *
+     * @param integer $sub_id The subscription ID to suspend.
+     *
+     * @return void
+     *
+     * @throws MeprGatewayException If the subscription is already suspended or in a free trial.
+     */
+    public function process_suspend_subscription($sub_id)
+    {
+        $sub = new MeprSubscription($sub_id);
+
+        if ($sub->status === MeprSubscription::$suspended_str) {
+            throw new MeprGatewayException(esc_html__('This subscription has already been paused.', 'memberpress'));
+        }
+
+        if ($sub->in_free_trial()) {
+            throw new MeprGatewayException(esc_html__('Sorry, subscriptions cannot be paused during a free trial.', 'memberpress'));
+        }
+
+        $this->update_paypal_payment_profile($sub_id, 'Suspend');
+
+        $_REQUEST['recurring_payment_id'] = $sub->subscr_id;
+        $this->record_suspend_subscription();
+    }
+
+    /**
+     * This method should be used by the class to record a successful suspension
+     * from the gateway.
+     */
+    public function record_suspend_subscription()
+    {
+        $subscr_id = sanitize_text_field(wp_unslash($_REQUEST['recurring_payment_id'] ?? ''));
+        $sub       = MeprSubscription::get_one_by_subscr_id($subscr_id);
+
+        if (!$sub) {
+            return false;
+        }
+
+        // Seriously ... if sub was already suspended what are we doing here?
+        if ($sub->status === MeprSubscription::$suspended_str) {
+            return $sub;
+        }
+
+        $sub->status = MeprSubscription::$suspended_str;
+        $sub->store();
+
+        MeprUtils::send_suspended_sub_notices($sub);
+
+        return $sub;
+    }
+
+    /**
+     * Used to suspend a subscription by the given gateway.
+     *
+     * @param integer $sub_id The subscription ID to resume.
+     *
+     * @return void
+     */
+    public function process_resume_subscription($sub_id)
+    {
+        $sub = new MeprSubscription($sub_id);
+        $this->update_paypal_payment_profile($sub_id, 'Reactivate');
+
+        $_REQUEST['recurring_payment_id'] = $sub->subscr_id;
+        $this->record_resume_subscription();
+    }
+
+    /**
+     * This method should be used by the class to record a successful resuming of
+     * as subscription from the gateway.
+     *
+     * @return mixed
+     */
+    public function record_resume_subscription()
+    {
+        $subscr_id = sanitize_text_field(wp_unslash($_REQUEST['recurring_payment_id'] ?? ''));
+        $sub       = MeprSubscription::get_one_by_subscr_id($subscr_id);
+
+        if (!$sub) {
+            return false;
+        }
+
+        // Seriously ... if sub was already active what are we doing here?
+        if ($sub->status === MeprSubscription::$active_str) {
+            return $sub;
+        }
+
+        $sub->status = MeprSubscription::$active_str;
+        $sub->store();
+
+        // Check if prior txn is expired yet or not, if so create a temporary txn so the user can access the content immediately.
+        $prior_txn = $sub->latest_txn();
+        if (!($prior_txn instanceof MeprTransaction) || strtotime($prior_txn->expires_at) < time()) {
+            $txn                  = new MeprTransaction();
+            $txn->subscription_id = $sub->id;
+            $txn->trans_num       = $sub->subscr_id . '-' . uniqid();
+            $txn->status          = MeprTransaction::$confirmed_str;
+            $txn->txn_type        = MeprTransaction::$subscription_confirmation_str;
+            $txn->expires_at      = MeprUtils::ts_to_mysql_date($sub->get_expires_at());
+            $txn->set_subtotal(0.00); // Just a confirmation txn.
+            $txn->store();
+        }
+
+        MeprUtils::send_resumed_sub_notices($sub);
+
+        return $sub;
+    }
+
+    /**
+     * Used to cancel a subscription by the given gateway. This method should be used
+     * by the class to record a successful cancellation from the gateway. This method
+     * should also be used by any IPN requests or Silent Posts.
+     *
+     * @param integer $sub_id The subscription ID to cancel.
+     *
+     * @return void
+     */
+    public function process_cancel_subscription($sub_id)
+    {
+        $sub = new MeprSubscription($sub_id);
+
+        // Should already expire naturally at paypal so we have no need
+        // to do this when we're "cancelling" because of a natural expiration.
+        if (!isset($_REQUEST['expire'])) {
+            $this->update_paypal_payment_profile($sub_id, 'Cancel');
+        }
+
+        $_REQUEST['recurring_payment_id'] = $sub->subscr_id;
+        $this->record_cancel_subscription();
+    }
+
+    /**
+     * This method should be used by the class to record a successful cancellation
+     * from the gateway. This method should also be used by any IPN requests or
+     * Silent Posts.
+     */
+    public function record_cancel_subscription()
+    {
+        $subscr_id = sanitize_text_field(wp_unslash($_REQUEST['recurring_payment_id'] ?? ''));
+        $sub       = MeprSubscription::get_one_by_subscr_id($subscr_id);
+
+        if (!$sub) {
+            return false;
+        }
+
+        // Seriously ... if sub was already cancelled what are we doing here?
+        if ($sub->status === MeprSubscription::$cancelled_str) {
+            return $sub;
+        }
+
+        $sub->status = MeprSubscription::$cancelled_str;
+        $sub->store();
+
+        if (isset($_REQUEST['expire'])) {
+            $sub->limit_reached_actions();
+        }
+
+        if (!isset($_REQUEST['silent']) || (bool) $_REQUEST['silent'] === false) {
+            MeprUtils::send_cancelled_sub_notices($sub);
+        }
+
+        return $sub;
+    }
+
+    /**
+     * This gets called on the 'init' hook when the signup form is processed ...
+     * this is in place so that payment solutions like paypal can redirect
+     * before any content is rendered.
+     *
+     * @param MeprTransaction $txn The transaction to process the signup form for.
+     *
+     * @return void
+     */
+    public function process_signup_form($txn)
+    {
+        // Not needed
+        // if($txn->amount <= 0.00) {
+        // MeprTransaction::create_free_transaction($txn);
+        // return;
+        // }.
+    }
+
+    /**
+     * Display the payment page for a transaction.
+     *
+     * @param MeprTransaction $txn The transaction to display the payment page for.
+     *
+     * @return void
+     */
+    public function display_payment_page($txn)
+    {
+        // Nothing here yet.
+    }
+
+    /**
+     * This gets called on wp_enqueue_script and enqueues a set of
+     * scripts for use on the page containing the payment form
+     */
+    public function enqueue_payment_form_scripts()
+    {
+        wp_enqueue_script('mepr-gateway-checkout', MEPR_JS_URL . '/gateway/checkout.js', ['mepr-checkout-js'], MEPR_VERSION);
+    }
+
+    /**
+     * This gets called on wp_enqueue_script and enqueues a set of
+     * scripts for use on the front end user account page.
+     * Can be overridden if custom scripts are necessary.
+     */
+    public function enqueue_user_account_scripts()
+    {
+        if (
+            MeprUtils::valid_url_param('action', 'update', 'GET') && // (routing) Are we on the update credit card page?
+            MeprUtils::valid_url_param('sub', null, 'GET') && // (routing) Do we have a sub url parameter?
+            MeprSubscription::exists(intval($_GET['sub'] ?? 0))
+        ) { // Does the subscription exist?
+            $sub = new MeprSubscription(intval($_GET['sub'] ?? 0));
+
+            // Ensure that the gateway associated with the subscription we're updating is for PayPalPro.
+            if ($sub->gateway === $this->id) {
+                wp_enqueue_script('mepr-default-gateway-checkout-js');
+            }
+        }
+    }
+
+    /**
+     * This gets called on the_content and just renders the payment form
+     *
+     * @param float    $amount     The amount to charge.
+     * @param MeprUser $user       The user to charge.
+     * @param integer  $product_id The product ID to charge.
+     * @param integer  $txn_id     The transaction ID to charge.
+     *
+     * @return void
+     */
+    public function display_payment_form($amount, $user, $product_id, $txn_id)
+    {
+        $mepr_options = MeprOptions::fetch();
+        $prd          = new MeprProduct($product_id);
+        $coupon       = false;
+
+        $txn = new MeprTransaction($txn_id);
+        $usr = $txn->user();
+
+        // Artifically set the price of the $prd in case a coupon was used.
+        if ((float) $prd->price !== (float) $amount) {
+            $coupon     = true;
+            $prd->price = $amount;
+        }
+
+        $invoice = MeprTransactionsHelper::get_invoice($txn);
+        echo $invoice; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+
+        ?>
+    <div class="mp_wrapper mp_payment_form_wrapper">
+        <?php MeprView::render('/shared/errors', get_defined_vars()); ?>
+      <form action="" method="post" id="payment-form" class="mepr-checkout-form mepr-form mepr-card-form" novalidate>
+        <input type="hidden" name="mepr_process_payment_form" value="Y" />
+        <input type="hidden" name="mepr_transaction_id" value="<?php echo esc_attr($txn_id); ?>" />
+        <div class="mp-form-row">
+          <div class="mp-form-label">
+            <label><?php esc_html_e('Credit Card Number', 'memberpress'); ?></label>
+            <span class="cc-error"><?php esc_html_e('Invalid Credit Card Number', 'memberpress'); ?></span>
+          </div>
+          <input type="tel" class="mepr-form-input cc-number validation" pattern="\d*" autocomplete="cc-number" required />
+          <input type="hidden" class="mepr-cc-num" name="mepr_cc_num"/>
+          <script>
+            jQuery(document).ready(function($) {
+              $('input.cc-number').on('change blur', function (e) {
+                var num = $(this).val().replace(/ /g, '');
+                $('input.mepr-cc-num').val( num );
+              });
+            });
+          </script>
+        </div>
+
+        <input type="hidden" name="mepr-cc-type" class="cc-type" value="" />
+
+        <div class="mp-form-row">
+          <div class="mp-form-label">
+            <label><?php esc_html_e('Expiration', 'memberpress'); ?></label>
+            <span class="cc-error"><?php esc_html_e('Invalid Expiration', 'memberpress'); ?></span>
+          </div>
+          <input type="tel" class="mepr-form-input cc-exp validation" pattern="\d*" autocomplete="cc-exp" placeholder="mm/yy" required>
+          <input type="hidden" class="cc-exp-month" name="mepr_cc_exp_month"/>
+          <input type="hidden" class="cc-exp-year" name="mepr_cc_exp_year"/>
+          <script>
+            jQuery(document).ready(function($) {
+              $('input.cc-exp').on('change blur', function (e) {
+                var exp = $(this).payment('cardExpiryVal');
+                $( 'input.cc-exp-month' ).val( exp.month );
+                $( 'input.cc-exp-year' ).val( exp.year );
+              });
+            });
+          </script>
+        </div>
+
+        <div class="mp-form-row">
+          <div class="mp-form-label">
+            <label><?php esc_html_e('CVC', 'memberpress'); ?></label>
+            <span class="cc-error"><?php esc_html_e('Invalid CVC Code', 'memberpress'); ?></span>
+          </div>
+          <input type="tel" name="mepr_cvv_code" class="mepr-form-input card-cvc cc-cvc validation" pattern="\d*" autocomplete="off" required />
+        </div>
+
+        <?php if (empty($usr->first_name) || empty($usr->last_name)) : ?>
+          <div class="mp-form-row">
+            <label><?php esc_html_e('First Name', 'memberpress'); ?></label>
+            <input type="text" name="mepr_first_name" class="mepr-form-input" value="<?php echo (isset($_POST['mepr_first_name'])) ? esc_attr(sanitize_text_field(wp_unslash($_POST['mepr_first_name']))) : esc_attr($usr->first_name); ?>" />
+          </div>
+
+          <div class="mp-form-row">
+            <label><?php esc_html_e('Last Name', 'memberpress'); ?></label>
+            <input type="text" name="mepr_last_name" class="mepr-form-input" value="<?php echo (isset($_POST['mepr_last_name'])) ? esc_attr(sanitize_text_field(wp_unslash($_POST['mepr_last_name']))) : esc_attr($usr->last_name); ?>" />
+          </div>
+        <?php else : ?>
+          <input type="hidden" name="mepr_first_name" value="<?php echo esc_attr($usr->first_name); ?>" />
+          <input type="hidden" name="mepr_last_name" value="<?php echo esc_attr($usr->last_name); ?>" />
+        <?php endif; ?>
+
+        <?php if (!$usr->address_is_set()) :
+            MeprUsersHelper::render_address_fields(); ?>
+        <?php else : ?>
+          <input type="hidden" name="mepr-address-one" value="<?php echo esc_attr($usr->address('one')); ?>" />
+          <input type="hidden" name="mepr-address-two" value="<?php echo esc_attr($usr->address('two')); ?>" />
+          <input type="hidden" name="mepr-address-city" value="<?php echo esc_attr($usr->address('city')); ?>" />
+          <input type="hidden" name="mepr-address-state" value="<?php echo esc_attr($usr->address('state')); ?>" />
+          <input type="hidden" name="mepr-address-zip" value="<?php echo esc_attr($usr->address('zip')); ?>" />
+          <input type="hidden" name="mepr-address-country" value="<?php echo esc_attr($usr->address('country')); ?>" />
+        <?php endif; ?>
+
+        <div class="mepr_spacer">&nbsp;</div>
+
+        <input type="submit" class="mepr-submit" value="<?php esc_attr_e('Submit', 'memberpress'); ?>" />
+        <img src="<?php echo esc_url(admin_url('images/loading.gif')); ?>" alt="<?php esc_attr_e('Loading...', 'memberpress'); ?>" style="display: none;" class="mepr-loading-gif" />
+        <?php MeprView::render('/shared/has_errors', get_defined_vars()); ?>
+      </form>
+      </div>
+        <?php
+
+        MeprHooks::do_action('mepr_paypal_pro_payment_form', $txn);
+    }
+
+    /**
+     * Process the payment form for a transaction.
+     *
+     * @param MeprTransaction $txn The transaction to process the payment form for.
+     *
+     * @return void
+     */
+    public function process_payment_form($txn)
+    {
+        // We're just here to update the user's name if they changed it.
+        $user       = $txn->user();
+        $first_name = MeprUtils::sanitize_name_field(wp_unslash($_POST['mepr_first_name'] ?? '')); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+        $last_name  = MeprUtils::sanitize_name_field(wp_unslash($_POST['mepr_last_name'] ?? '')); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+
+        if ($user->first_name !== $first_name) {
+            update_user_meta($user->ID, 'first_name', $first_name);
+        }
+
+        if ($user->last_name !== $last_name) {
+            update_user_meta($user->ID, 'last_name', $last_name);
+        }
+
+        // Call the parent to handle the rest of this.
+        parent::process_payment_form($txn);
+    }
+
+    /**
+     * Validate the payment form before processing.
+     *
+     * @param array $errors The errors array to populate with validation errors.
+     *
+     * @return array The populated errors array.
+     */
+    public function validate_payment_form($errors)
+    {
+        $mepr_options = MeprOptions::fetch();
+
+        if (!isset($_POST['mepr_transaction_id']) || !is_numeric($_POST['mepr_transaction_id'])) {
+            $errors[] = __('An unknown error has occurred.', 'memberpress');
+        }
+
+        if (
+            !$mepr_options->show_fname_lname &&
+            ( !isset($_POST['mepr_first_name']) || empty($_POST['mepr_first_name']) ||
+            !isset($_POST['mepr_last_name']) || empty($_POST['mepr_last_name']) )
+        ) {
+            $errors[] = __('Your first name and last name must not be blank.', 'memberpress');
+        }
+
+        if (!isset($_POST['mepr_cc_num']) || empty($_POST['mepr_cc_num'])) {
+            $errors[] = __('You must enter your Credit Card number.', 'memberpress');
+        } elseif (!$this->is_credit_card_valid(sanitize_text_field(wp_unslash($_POST['mepr_cc_num'])))) {
+            $errors[] = __('Your credit card number is invalid.', 'memberpress');
+        }
+
+        if (!isset($_POST['mepr_cvv_code']) || empty($_POST['mepr_cvv_code'])) {
+            $errors[] = __('You must enter your CVV code.', 'memberpress');
+        }
+
+        return $errors;
+    }
+
+    /**
+     * Display the options form for the PayPal Pro gateway.
+     *
+     * @return void
+     */
+    public function display_options_form()
+    {
+        $mepr_options = MeprOptions::fetch();
+
+        $api_username = trim($this->settings->api_username);
+        $api_password = trim($this->settings->api_password);
+        $signature    = trim($this->settings->signature);
+        $sandbox      = ($this->settings->sandbox === 'on' or $this->settings->sandbox === true);
+        $debug        = ($this->settings->debug === 'on' or $this->settings->debug === true);
+        $force_ssl    = ($this->settings->force_ssl === 'on' or $this->settings->force_ssl === true);
+
+        ?>
+    <table>
+      <tr>
+        <td><?php esc_html_e('API Username*:', 'memberpress'); ?></td>
+        <td><input type="text" class="mepr-auto-trim" name="<?php echo esc_attr($mepr_options->integrations_str); ?>[<?php echo esc_attr($this->id);?>][api_username]" value="<?php echo esc_attr($api_username); ?>" /></td>
+      </tr>
+      <tr>
+        <td><?php esc_html_e('API Password*:', 'memberpress'); ?></td>
+        <td><input type="text" class="mepr-auto-trim" name="<?php echo esc_attr($mepr_options->integrations_str); ?>[<?php echo esc_attr($this->id);?>][api_password]" value="<?php echo esc_attr($api_password); ?>" /></td>
+      </tr>
+      <tr>
+        <td><?php esc_html_e('Signature*:', 'memberpress'); ?></td>
+        <td><input type="text" class="mepr-auto-trim" name="<?php echo esc_attr($mepr_options->integrations_str); ?>[<?php echo esc_attr($this->id);?>][signature]" value="<?php echo esc_attr($signature); ?>" /></td>
+      </tr>
+      <tr>
+        <td colspan="2"><input type="checkbox" name="<?php echo esc_attr($mepr_options->integrations_str); ?>[<?php echo esc_attr($this->id);?>][sandbox]"<?php echo checked($sandbox); ?> />&nbsp;<?php esc_html_e('Use PayPal Sandbox', 'memberpress'); ?></td>
+      </tr>
+      <tr>
+        <td colspan="2"><input type="checkbox" name="<?php echo esc_attr($mepr_options->integrations_str); ?>[<?php echo esc_attr($this->id);?>][debug]"<?php echo checked($debug); ?> />&nbsp;<?php esc_html_e('Send PayPal Debug Emails', 'memberpress'); ?></td>
+      </tr>
+      <tr>
+        <td colspan="2"><input type="checkbox" name="<?php echo esc_attr($mepr_options->integrations_str); ?>[<?php echo esc_attr($this->id);?>][force_ssl]"<?php checked($force_ssl); ?> />&nbsp;<?php esc_html_e('Force SSL', 'memberpress'); ?></td>
+      </tr>
+      <tr>
+        <td><?php esc_html_e('PayPal IPN URL:', 'memberpress'); ?></td>
+        <td><?php MeprAppHelper::clipboard_input($this->notify_url('ipn')); ?></td>
+      </tr>
+        <?php MeprHooks::do_action('mepr_paypal_express_options_form', $this); ?>
+    </table>
+        <?php
+    }
+
+    /**
+     * Validates the form for the given payment gateway on the MemberPress Options page
+     *
+     * @param array $errors The errors array to populate with validation errors.
+     *
+     * @return array The populated errors array.
+     */
+    public function validate_options_form($errors)
+    {
+        $mepr_options = MeprOptions::fetch();
+
+        if (
+            !isset($_POST[$mepr_options->integrations_str][$this->id]['api_username']) or
+            empty($_POST[$mepr_options->integrations_str][$this->id]['api_username'])
+        ) {
+            $errors[] = __("PayPal API Username field can't be blank.", 'memberpress');
+        } elseif (
+            !isset($_POST[$mepr_options->integrations_str][$this->id]['api_password']) or
+            empty($_POST[$mepr_options->integrations_str][$this->id]['api_password'])
+        ) {
+            $errors[] = __("PayPal API Password field can't be blank.", 'memberpress');
+        } elseif (
+            !isset($_POST[$mepr_options->integrations_str][$this->id]['signature']) or
+            empty($_POST[$mepr_options->integrations_str][$this->id]['signature'])
+        ) {
+            $errors[] = __("PayPal Signature field can't be blank.", 'memberpress');
+        }
+
+        return $errors;
+    }
+
+    /**
+     * Displays the update account form on the subscription account page
+     *
+     * @param integer $sub_id  The subscription ID to update.
+     * @param array   $errors  The errors array to display.
+     * @param string  $message The message to display.
+     *
+     * @return void
+     **/
+    public function display_update_account_form($sub_id, $errors = [], $message = '')
+    {
+        $sub = new MeprSubscription($sub_id);
+
+        $last4     = isset($_POST['update_cc_num']) ? substr(sanitize_text_field(wp_unslash($_POST['update_cc_num'])), -4) : $sub->cc_last4;
+        $exp_month = isset($_POST['update_cc_exp_month']) ? sanitize_text_field(wp_unslash($_POST['update_cc_exp_month'])) : $sub->cc_exp_month;
+        $exp_year  = isset($_POST['update_cc_exp_year']) ? sanitize_text_field(wp_unslash($_POST['update_cc_exp_year'])) : $sub->cc_exp_year;
+
+        // Only include the full cc number if there are errors.
+        if (strtolower(sanitize_text_field(wp_unslash($_SERVER['REQUEST_METHOD'] ?? ''))) === 'post' && empty($errors)) {
+            $sub->cc_last4     = $last4;
+            $sub->cc_exp_month = $exp_month;
+            $sub->cc_exp_year  = $exp_year;
+            $sub->store();
+
+            unset($_POST['update_cvv_code']); // Unset this for security.
+        } else { // If there are errors then show the full cc num ... if it's there.
+            $last4 = isset($_POST['update_cc_num']) ? sanitize_text_field(wp_unslash($_POST['update_cc_num'])) : $sub->cc_last4;
+        }
+
+        $ccv_code = isset($_POST['update_cvv_code']) ? sanitize_text_field(wp_unslash($_POST['update_cvv_code'])) : '';
+        $exp      = sprintf('%02d / %d', $exp_month, $exp_year);
+
+        ?>
+    <div class="mp_wrapper">
+      <form action="" method="post" id="mepr_paypal_pro_update_cc_form" class="mepr-checkout-form mepr-form" novalidate>
+        <input type="hidden" name="_mepr_nonce" value="<?php echo esc_attr(wp_create_nonce('mepr_process_update_account_form')); ?>" />
+        <div class="mepr_update_account_table">
+          <div><strong><?php esc_html_e('Update your Credit Card information below', 'memberpress'); ?></strong></div>
+          <?php MeprView::render('/shared/errors', get_defined_vars()); ?>
+          <div class="mp-form-row">
+            <label><?php esc_html_e('Credit Card Number', 'memberpress'); ?></label>
+            <input type="text" class="mepr-form-input cc-number validation" pattern="\d*" autocomplete="cc-number" placeholder="<?php echo esc_attr(MeprUtils::cc_num($last4)); ?>" required />
+            <input type="hidden" class="mepr-cc-num" name="update_cc_num"/>
+            <script>
+              jQuery(document).ready(function($) {
+                $('input.cc-number').on('change blur', function (e) {
+                  var num = $(this).val().replace(/ /g, '');
+                  $('input.mepr-cc-num').val( num );
+                });
+              });
+            </script>
+          </div>
+
+          <input type="hidden" name="mepr-cc-type" class="cc-type" value="" />
+
+          <div class="mp-form-row">
+            <div class="mp-form-label">
+              <label><?php esc_html_e('Expiration', 'memberpress'); ?></label>
+              <span class="cc-error"><?php esc_html_e('Invalid Expiration', 'memberpress'); ?></span>
+            </div>
+            <input type="text" class="mepr-form-input cc-exp validation" value="<?php echo esc_attr($exp); ?>" pattern="\d*" autocomplete="cc-exp" placeholder="mm/yy" required>
+            <input type="hidden" class="cc-exp-month" name="update_cc_exp_month"/>
+            <input type="hidden" class="cc-exp-year" name="update_cc_exp_year"/>
+            <script>
+              jQuery(document).ready( function($) {
+                $('input.cc-exp').on('change blur', function (e) {
+                  var exp = $(this).payment('cardExpiryVal');
+                  $( 'input.cc-exp-month' ).val( exp.month );
+                  $( 'input.cc-exp-year' ).val( exp.year );
+                });
+              });
+            </script>
+          </div>
+
+          <div class="mp-form-row">
+            <div class="mp-form-label">
+              <label><?php esc_html_e('CVC', 'memberpress'); ?></label>
+              <span class="cc-error"><?php esc_html_e('Invalid CVC Code', 'memberpress'); ?></span>
+            </div>
+            <input type="text" name="update_cvv_code" class="mepr-form-input card-cvc cc-cvc validation" pattern="\d*" autocomplete="off" required />
+          </div>
+        </div>
+
+        <div class="mepr_spacer">&nbsp;</div>
+
+        <input type="submit" class="mepr-submit" value="<?php esc_attr_e('Update Credit Card', 'memberpress'); ?>" />
+        <img src="<?php echo esc_url(admin_url('images/loading.gif')); ?>" alt="<?php esc_attr_e('Loading...', 'memberpress'); ?>" style="display: none;" class="mepr-loading-gif" />
+        <?php MeprView::render('/shared/has_errors', get_defined_vars()); ?>
+      </form>
+    </div>
+        <?php
+    }
+
+    /**
+     * Validate the update account form before processing.
+     *
+     * @param array $errors The errors array to populate with validation errors.
+     *
+     * @return array The populated errors array.
+     */
+    public function validate_update_account_form($errors = [])
+    {
+        if (
+            !isset($_POST['_mepr_nonce']) or empty($_POST['_mepr_nonce']) or
+            !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['_mepr_nonce'])), 'mepr_process_update_account_form')
+        ) {
+            $errors[] = __('An unknown error has occurred. Please try again.', 'memberpress');
+        }
+
+        if (!isset($_POST['update_cc_num']) || empty($_POST['update_cc_num'])) {
+            $errors[] = __('You must enter your Credit Card number.', 'memberpress');
+        } elseif (!$this->is_credit_card_valid(sanitize_text_field(wp_unslash($_POST['update_cc_num'])))) {
+            $errors[] = __('Your credit card number is invalid.', 'memberpress');
+        }
+
+        if (!isset($_POST['update_cvv_code']) || empty($_POST['update_cvv_code'])) {
+            $errors[] = __('You must enter your CVV code.', 'memberpress');
+        }
+
+        return $errors;
+    }
+
+    /**
+     * Process the update account form for a subscription.
+     *
+     * @param integer $sub_id The subscription ID to update.
+     *
+     * @return array The response from the update.
+     */
+    public function process_update_account_form($sub_id)
+    {
+        return $this->process_update_subscription($sub_id);
+    }
+
+    /**
+     * Determine if the gateway is in test mode.
+     *
+     * @return boolean True if in test mode, false otherwise.
+     */
+    public function is_test_mode()
+    {
+        return (isset($this->settings->sandbox) and $this->settings->sandbox);
+    }
+
+    /**
+     * Determine if SSL is forced for the gateway.
+     *
+     * @return boolean True if SSL is forced, false otherwise.
+     */
+    public function force_ssl()
+    {
+        return (isset($this->settings->force_ssl) and ($this->settings->force_ssl === 'on' or $this->settings->force_ssl === true));
+    }
+
+    /**
+     * Send an NVP request to PayPal.
+     *
+     * @param string  $method_name The API method name.
+     * @param array   $args        The arguments for the request.
+     * @param string  $method      The HTTP method to use (default: 'post').
+     * @param boolean $blocking    Whether the request should block (default: true).
+     *
+     * @return array|boolean The response from PayPal or true if not blocking.
+     *
+     * @throws MeprHttpException If there is an HTTP error or PayPal returns an error.
+     */
+    private function send_nvp_request($method_name, $args, $method = 'post', $blocking = true)
+    {
+        $mepr_options = MeprOptions::fetch();
+        $args         = array_merge(
+            [
+                'VERSION'   => $this->settings->api_version,
+                'SIGNATURE' => $this->settings->signature,
+                'USER'      => $this->settings->api_username,
+                'PWD'       => $this->settings->api_password,
+                'METHOD'    => $method_name,
+            ],
+            $args
+        );
+
+        $args = MeprHooks::apply_filters('mepr_paypal_pro_send_request_args', $args);
+
+        $arg_array = MeprHooks::apply_filters('mepr_paypal_pro_send_request', [
+            'method'      => strtoupper($method),
+            'headers'     => ['PAYPAL-NVP' => 'Y'],
+            'body'        => $args,
+            'timeout'     => 70,
+            'blocking'    => $blocking,
+            'sslverify'   => $mepr_options->sslverify,
+            'user-agent'  => 'MemberPress',
+            'httpversion' => '1.1', // PayPal is now requiring this.
+        ]);
+
+        $this->email_status("Sending Paypal Request to {$this->settings->api_url}\n" . MeprUtils::object_to_string($arg_array, true) . "\n" . json_encode($arg_array), $this->settings->debug);
+
+        $resp = wp_remote_post($this->settings->api_url, $arg_array);
+
+        $this->email_status("Got Paypal Response\n" . MeprUtils::object_to_string($resp, true) . "\n", $this->settings->debug);
+
+        // If we're not blocking then the response is irrelevant
+        // So we'll just return true.
+        if ($blocking === false) {
+            return true;
+        }
+
+        if (is_wp_error($resp)) {
+            throw new MeprHttpException(sprintf(
+                // Translators: %s: gateway name.
+                esc_html__('You had an HTTP error connecting to %s', 'memberpress'),
+                esc_html($this->name)
+            ));
+        } else {
+            $resp_args = wp_parse_args($resp['body']);
+
+            if (isset($resp_args['ACK']) && strtolower($resp_args['ACK']) !== 'success') {
+                throw new MeprHttpException(esc_html($resp_args['L_LONGMESSAGE0']));
+            }
+
+            return $resp_args;
+        }
+
+        return false;
+    }
+
+    /**
+     * Handle the return request from PayPal.
+     *
+     * @return void
+     */
+    public function return_handler()
+    {
+        // Handled with a GET REQUEST by PayPal.
+        $this->email_status("Paypal Return \$_REQUEST:\n" . MeprUtils::object_to_string($_REQUEST, true) . "\n", $this->settings->debug);
+
+        $mepr_options = MeprOptions::fetch();
+        if (isset($_REQUEST['token'])) {
+            $token = sanitize_text_field(wp_unslash($_REQUEST['token']));
+        } elseif (isset($_REQUEST['TOKEN'])) {
+            $token = sanitize_text_field(wp_unslash($_REQUEST['TOKEN']));
+        }
+
+        if (isset($token)) {
+            $obj = MeprTransaction::get_one_by_trans_num($token);
+
+            $txn = new MeprTransaction();
+            $txn->load_data($obj);
+
+            $this->email_status("Paypal Transaction \$txn:\n" . MeprUtils::object_to_string($txn, true) . "\n", $this->settings->debug);
+
+            try {
+                $this->process_payment_form($txn);
+                $txn             = new MeprTransaction($txn->id); // Grab the txn again, now that we've updated it.
+                $product         = new MeprProduct($txn->product_id);
+                $sanitized_title = sanitize_title($product->post_title);
+                $query_params    = [
+                    'membership'    => $sanitized_title,
+                    'trans_num'     => $txn->trans_num,
+                    'membership_id' => $product->ID,
+                ];
+                if ($txn->subscription_id > 0) {
+                    $sub          = $txn->subscription();
+                    $query_params = array_merge($query_params, ['subscr_id' => $sub->subscr_id]);
+                }
+
+                $thankyou_url = $this->do_thankyou_url($query_params, $txn);
+
+                MeprUtils::wp_redirect($thankyou_url);
+            } catch (Exception $e) {
+                $prd = $txn->product();
+                MeprUtils::wp_redirect($prd->url('?action=payment_form&txn=' . $txn->trans_num . '&message=' . $e->getMessage() . '&_wpnonce=' . wp_create_nonce('mepr_payment_form')));
+            }
+        }
+    }
+
+    /**
+     * Handle the cancel request from PayPal.
+     *
+     * @return void
+     */
+    public function cancel_handler()
+    {
+        // Handled with a GET REQUEST by PayPal.
+        $this->email_status("Paypal Cancel \$_REQUEST:\n" . MeprUtils::object_to_string($_REQUEST, true) . "\n", $this->settings->debug);
+
+        if (isset($_REQUEST['token'])) {
+            $token = sanitize_text_field(wp_unslash($_REQUEST['token']));
+            if ($token) {
+                $txn = MeprTransaction::get_one_by_trans_num($token);
+                $txn = new MeprTransaction($txn->id);
+
+                // Make sure the txn status is pending.
+                $txn->status = MeprTransaction::$pending_str;
+                $txn->store();
+
+                $sub = $txn->subscription();
+                if ($sub) {
+                    $sub->status = MeprSubscription::$pending_str;
+                    $sub->store();
+                }
+
+                if ($txn) {
+                    $prd = new MeprProduct($txn->product_id);
+                    // TODO: Send an abandonment email.
+                    MeprUtils::wp_redirect($this->message_page_url($prd, 'cancel'));
+                } else {
+                    MeprUtils::wp_redirect(home_url());
+                }
+            }
+        }
+    }
+
+    /**
+     * Display the cancel message to the user.
+     *
+     * @return void
+     */
+    public function cancel_message()
+    {
+        $mepr_options = MeprOptions::fetch();
+        ?>
+      <h4><?php esc_html_e('Your payment at PayPal was cancelled.', 'memberpress'); ?></h4>
+      <p><?php echo MeprHooks::apply_filters('mepr_paypal_website_payments_pro_cancel_message', sprintf( // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+          // Translators: %1$s: opening anchor tag, %2$s: closing anchor tag.
+          esc_html__('You can retry your purchase by %1$sclicking here%2$s.', 'memberpress'),
+          '<a href="' . esc_url(MeprUtils::get_permalink()) . '">',
+          '</a>'
+      )); ?><br/></p>
+        <?php
+    }
+
+    /**
+     * Get the PayPal billing period based on the period type.
+     *
+     * @param string $period_type The period type ('months', 'years', 'weeks', etc.).
+     *
+     * @return string The PayPal billing period.
+     */
+    public function paypal_period($period_type)
+    {
+        if ($period_type === 'months') {
+            return 'Month';
+        } elseif ($period_type === 'years') {
+            return 'Year';
+        } elseif ($period_type === 'weeks') {
+            return 'Week';
+        } else {
+            return $period_type;
+        }
+    }
+
+    /**
+     * Send an error message for digital goods setup issues.
+     *
+     * @return void
+     */
+    private function send_digital_goods_error_message()
+    {
+        $subject = sprintf(
+            // Translators: %s: site name.
+            esc_html__('** PayPal Payment ERROR on %s', 'memberpress'),
+            MeprUtils::blogname()
+        );
+        $body    = sprintf(
+            // Translators: %s: the support link URL.
+            esc_html__('Your PayPal account isn\'t setup to sell Digital Goods.
+
+Your recurring billing profiles and transactions won\'t complete properly until this problem is fixed.
+
+Follow these instructions to enable Digital Goods:
+1) Sign in to your PayPal account (must be signed in before visiting the link below)
+2) Visit https://www.paypal.com/us/webapps/mpp/digital in your browser
+3) Follow the steps PayPal provides here to add Digital Goods to your account
+
+If you still have issues getting this to work, please contact customer support at %s.
+
+Thanks,
+
+The MemberPress Team
+', 'memberpress'),
+            esc_url(MeprUtils::get_link_url('support'))
+        );
+
+        MeprUtils::wp_mail_to_admin($subject, $body);
+    }
+
+    /**
+     * Get the PayPal description for a transaction.
+     *
+     * @param MeprTransaction $txn The transaction to get the description for.
+     *
+     * @return string The PayPal description.
+     */
+    private function paypal_desc($txn)
+    {
+        $prd = new MeprProduct($txn->product_id);
+
+        if ($prd->register_price_action === 'hidden' && !empty($prd->post_title)) {
+            return $prd->post_title;
+        } elseif ($prd->register_price_action === 'custom' && !empty($prd->register_price) && !$txn->coupon_id && !$txn->prorated) {
+            return "{$prd->post_title} - " . stripslashes($prd->register_price);
+        } else {
+            return "{$prd->post_title} - " . MeprTransactionsHelper::format_currency($txn);
+        }
+    }
+
+    /**
+     * Update the PayPal payment profile for a subscription.
+     *
+     * @param integer $sub_id The subscription ID to update.
+     * @param string  $action The action to perform ('cancel', 'suspend', 'reactivate').
+     *
+     * @return void
+     *
+     * @throws MeprGatewayException If there is a problem with the update.
+     */
+    private function update_paypal_payment_profile($sub_id, $action = 'cancel')
+    {
+        $sub = new MeprSubscription($sub_id);
+
+        $args = MeprHooks::apply_filters('mepr_paypal_pro_update_payment_profile_args', [
+            'PROFILEID' => $sub->subscr_id,
+            'ACTION'    => $action,
+        ], $sub);
+
+        $this->email_status(
+            "PayPal Update subscription request: \n" . MeprUtils::object_to_string($args, true) . "\n",
+            $this->settings->debug
+        );
+
+        $res = $this->send_nvp_request('ManageRecurringPaymentsProfileStatus', $args);
+
+        $this->email_status(
+            "PayPal Update subscription response: \n" . MeprUtils::object_to_string($res, true) . "\n",
+            $this->settings->debug
+        );
+
+        if (strtolower($res['ACK']) !== 'success') {
+            throw new MeprGatewayException(sprintf(
+                // Translators: %s: error message.
+                esc_html__('There was a problem cancelling. %s', 'memberpress'),
+                esc_html($this->error_str($res))
+            ));
+        }
+
+        $_REQUEST['recurring_payment_id'] = $sub->subscr_id;
+    }
+
+    /**
+     * Get the error string from a PayPal response.
+     *
+     * @param array $res The PayPal response.
+     *
+     * @return string The error string.
+     */
+    private function error_str($res)
+    {
+        $error_str  = isset($res['L_SEVERITYCODE0']) ? $res['L_SEVERITYCODE0'] : '';
+        $error_str .= ' ';
+        $error_str .= isset($res['L_ERRORCODE0']) ? $res['L_ERRORCODE0'] : '';
+        $error_str .= ' ';
+        $error_str .= isset($res['L_SHORTMESSAGE0']) ? $res['L_SHORTMESSAGE0'] : '';
+
+        return $error_str;
+    }
+}

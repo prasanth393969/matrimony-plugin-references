@@ -1,0 +1,17 @@
+.facetwp-placeholder {
+    width: 220px;
+    max-width: 100%;
+}
+
+.facetwp-logo {
+    background: url('../images/logo.svg') no-repeat;
+    background-size: contain;
+    display: inline-block;
+    width: 22px;
+    height: 22px;
+    margin-right: 4px;
+}
+
+.facetwp-facet {
+    margin-bottom: 40px;
+}

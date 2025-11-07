@@ -1,0 +1,6 @@
+{
+    "name": "facetwp/facetwp-conditional-logic",
+    "type": "wordpress-plugin",
+    "description": "Show / hide facets depending on certain conditions",
+    "homepage": "https://facetwp.com/add-ons/conditional-logic/"
+}

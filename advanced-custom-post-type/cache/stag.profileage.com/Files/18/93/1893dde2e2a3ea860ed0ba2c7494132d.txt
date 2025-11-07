@@ -1,0 +1,1 @@
+a:6:{s:1:"k";s:32:"cf65bea6c007d65ddad6e7d549d5a4df";s:1:"d";a:1:{i:0;O:8:"stdClass":1:{s:2:"id";s:36:"fc257883-01b6-4063-8606-e7b9458c5122";}}s:1:"g";a:1:{i:0;s:32:"e8fd3167e5d1bbcb461c6d12b383f435";}s:1:"e";O:8:"DateTime":3:{s:4:"date";s:26:"2025-11-01 04:57:34.207330";s:13:"timezone_type";i:3;s:8:"timezone";s:3:"UTC";}s:1:"m";N;s:1:"c";N;}
