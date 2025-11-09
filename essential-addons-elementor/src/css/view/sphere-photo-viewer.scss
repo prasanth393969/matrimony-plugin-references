@@ -1,0 +1,52 @@
+@keyframes eael-spv-spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.eael-sphere-photo-wrapper {
+    .psv-loader-canvas {
+        border-radius: 50%;
+        border-top: 5px solid #797F8F;
+        border-right: 5px solid transparent;
+        animation: eael-spv-spin 1s linear infinite;
+        height: 64px;
+        width: 64px;
+        box-sizing: border-box;
+        left: calc(50% - 32px);
+        top: calc(50% - 32px);
+
+        *, + .psv-loader-text {
+            display: none;
+        }
+    }
+
+    .psv-navbar {
+        box-sizing: border-box;
+
+        .psv-button {
+            &.psv-zoom-range {
+                margin: 0;
+                padding: 19.5px 0;
+            }
+        }
+
+        .psv-move-button + .psv-move-button {
+            padding-left: 0;
+            margin-left: 0;
+        }
+    }
+
+    .psv-panel-menu-title {
+        color: inherit;
+    }
+
+    .psv-overlay-image {
+        svg {
+            width: 150px;
+        }
+    }
+}

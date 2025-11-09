@@ -1,0 +1,12 @@
+.eael-figma-to-elementor {
+   display: flex;
+   flex-direction: column;
+   align-items: center;
+   justify-content: center;
+   // flex-direction: column;
+
+   pre {
+      max-height: 200px;
+      overflow-y: auto;
+   }
+}

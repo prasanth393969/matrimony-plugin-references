@@ -1,0 +1,560 @@
+.eael-toggle-container {
+   -webkit-tap-highlight-color: transparent;
+}
+.eael-toggle-switch-inner {
+   align-items: center;
+   display: flex;
+}
+.eael-toggle-center {
+   .eael-toggle-switch-inner {
+      justify-content: center;
+   }
+}
+.eael-toggle-right {
+   .eael-toggle-switch-inner {
+      justify-content: flex-end;
+   }
+}
+.eael-toggle-switch-container {
+   display: inline-block;
+   line-height: 1;
+   margin: 0 15px;
+   overflow: hidden;
+}
+.eael-toggle-switch-round {
+   border-radius: 1.31em;
+   .eael-toggle-slider {
+      &:before {
+         border-radius: 50%;
+      }
+   }
+   &:focus-visible {
+      outline-offset: 1px;
+   }
+}
+.eael-toggle-switch {
+   position: relative;
+   display: inline-block;
+   width: 2.31em;
+   height: 1.29em;
+   margin: 0;
+   vertical-align: middle;
+   font-size: inherit;
+   input {
+      display: none;
+   }
+}
+.eael-toggle-content-wrap.primary {
+   > .eael-toggle-secondary-wrap {
+      display: none;
+   }
+}
+.eael-toggle-content-wrap.secondary {
+   > .eael-toggle-primary-wrap {
+      display: none;
+   }
+}
+.eael-toggle-content-wrap {
+   .elementor-section-stretched {
+      left: 0 !important;
+      width: 100% !important;
+   }
+}
+.eael-toggle-slider {
+   position: absolute;
+   cursor: pointer;
+   top: 0;
+   left: 0;
+   right: 0;
+   bottom: 0;
+   background-color: #ccc;
+   -webkit-transition: 0.4s;
+   transition: 0.4s;
+
+   &:before {
+      position: absolute;
+      content: "";
+      height: 1em;
+      width: 1em;
+      left: 0.16em;
+      bottom: 0.15em;
+      background-color: white;
+      -webkit-transition: 0.4s;
+      transition: 0.4s;
+   }
+}
+.eael-toggle-switch-on {
+   .eael-toggle-slider {
+      background-color: #2196f3;
+      box-shadow: 0 0 1px #2196f3;
+      &:before {
+         -webkit-transform: translateX(99%);
+         -ms-transform: translateX(99%);
+         transform: translateX(99%);
+      }
+   }
+}
+
+.rtl {
+   .eael-toggle-switch-inner {
+      direction: ltr;
+   }
+}
+
+// ========== Glossy Style ==========================
+:root {
+   --c-glass: #bbbbbc;
+   --c-light: #fff;
+   --c-dark: #000;
+
+   --c-content: #224;
+   --c-action: #0052f5;
+
+   --c-bg: #e8e8e9;
+
+   --glass-reflex-dark: 1;
+   --glass-reflex-light: 1;
+
+   --saturation: 150%;
+}
+
+.eael-glossy-switcher {
+   z-index: 1;
+   display: flex;
+   align-items: center;
+   gap: 10px;
+   justify-content: space-between;
+   box-sizing: border-box;
+   padding: 8px 12px 10px;
+   border: none;
+   background-color: color-mix(in srgb, var(--c-glass) 12%, transparent);
+   backdrop-filter: blur(8px) url(#switcher) saturate(var(--saturation));
+   -webkit-backdrop-filter: blur(8px) saturate(var(--saturation));
+   box-shadow: inset 0 0 0 1px
+         color-mix(
+            in srgb,
+            var(--c-light) calc(var(--glass-reflex-light) * 10%),
+            transparent
+         ),
+      inset 1.8px 3px 0px -2px color-mix(in srgb, var(--c-light)
+               calc(var(--glass-reflex-light) * 90%), transparent),
+      inset -2px -2px 0px -2px color-mix(in srgb, var(--c-light)
+               calc(var(--glass-reflex-light) * 80%), transparent),
+      inset -3px -8px 1px -6px color-mix(in srgb, var(--c-light)
+               calc(var(--glass-reflex-light) * 60%), transparent),
+      inset -0.3px -1px 4px 0px
+         color-mix(
+            in srgb,
+            var(--c-dark) calc(var(--glass-reflex-dark) * 12%),
+            transparent
+         ),
+      inset -1.5px 2.5px 0px -2px
+         color-mix(
+            in srgb,
+            var(--c-dark) calc(var(--glass-reflex-dark) * 20%),
+            transparent
+         ),
+      inset 0px 3px 4px -2px color-mix(in srgb, var(--c-dark)
+               calc(var(--glass-reflex-dark) * 20%), transparent),
+      inset 2px -6.5px 1px -4px
+         color-mix(
+            in srgb,
+            var(--c-dark) calc(var(--glass-reflex-dark) * 10%),
+            transparent
+         ),
+      0px 1px 5px 0px
+         color-mix(
+            in srgb,
+            var(--c-dark) calc(var(--glass-reflex-dark) * 10%),
+            transparent
+         ),
+      0px 6px 16px 0px
+         color-mix(
+            in srgb,
+            var(--c-dark) calc(var(--glass-reflex-dark) * 8%),
+            transparent
+         );
+   transition: background-color 400ms cubic-bezier(1, 0, 0.4, 1),
+      box-shadow 400ms cubic-bezier(1, 0, 0.4, 1);
+}
+
+.eael-glossy-switcher__input {
+   clip-path: inset(100%);
+   height: 1px;
+   width: 1px;
+   overflow: hidden;
+   position: absolute;
+   white-space: nowrap;
+}
+
+.switcher__icon svg,
+.switcher__icon i {
+   display: block;
+   width: 100%;
+   transition: scale 200ms cubic-bezier(0.5, 0, 0, 1);
+}
+
+.switcher__filter {
+   position: absolute;
+   width: 0;
+   height: 0;
+   z-index: -1;
+}
+
+.eael-glossy-switcher__option {
+   --c: var(--c-content);
+   display: flex;
+   justify-content: center;
+   align-items: center;
+   // padding: 0 10px;
+   width: 30px;
+   height: 100%;
+   box-sizing: border-box;
+   border-radius: 20px;
+   opacity: 1;
+   transition: all 160ms;
+}
+
+.eael-glossy-switcher__option[data-option="1"] {
+   transform: translateX(-6px);
+}
+
+.eael-glossy-switcher__option[data-option="2"] {
+   transform: translateX(8px);
+}
+
+.eael-glossy-switcher__option:hover {
+   --c: var(--c-action);
+   cursor: pointer;
+}
+
+.eael-glossy-switcher__option:hover .switcher__icon svg,
+.eael-glossy-switcher__option:hover .switcher__icon i {
+   scale: 1.2;
+}
+
+.eael-glossy-switcher__option:has(input:checked) {
+   --c: var(--c-action);
+   cursor: auto;
+}
+
+.eael-glossy-switcher__option:has(input:checked) .switcher__icon svg,
+.eael-glossy-switcher__option:has(input:checked) .switcher__icon i {
+   scale: 1.1;
+}
+
+.eael-glossy-switcher::after {
+   content: "";
+   position: absolute;
+   left: 8px;
+   top: 4px;
+   display: block;
+   width: 55px;
+   height: calc(100% - 10px);
+   border-radius: 20px;
+   background-color: color-mix(in srgb, var(--c-glass) 36%, transparent);
+   z-index: -1;
+   box-shadow: inset 0 0 0 1px
+         color-mix(
+            in srgb,
+            var(--c-light) calc(var(--glass-reflex-light) * 10%),
+            transparent
+         ),
+      inset 2px 1px 0px -1px color-mix(in srgb, var(--c-light)
+               calc(var(--glass-reflex-light) * 90%), transparent),
+      inset -1.5px -1px 0px -1px color-mix(in srgb, var(--c-light)
+               calc(var(--glass-reflex-light) * 80%), transparent),
+      inset -2px -6px 1px -5px color-mix(in srgb, var(--c-light)
+               calc(var(--glass-reflex-light) * 60%), transparent),
+      inset -1px 2px 3px -1px
+         color-mix(
+            in srgb,
+            var(--c-dark) calc(var(--glass-reflex-dark) * 20%),
+            transparent
+         ),
+      inset 0px -4px 1px -2px
+         color-mix(
+            in srgb,
+            var(--c-dark) calc(var(--glass-reflex-dark) * 10%),
+            transparent
+         ),
+      0px 3px 6px 0px
+         color-mix(
+            in srgb,
+            var(--c-dark) calc(var(--glass-reflex-dark) * 8%),
+            transparent
+         );
+}
+
+.eael-glossy-switcher:has(input[c-option="1"]:checked)::after {
+   translate: -3px 0;
+   transform-origin: right;
+   transition: background-color 400ms cubic-bezier(1, 0, 0.4, 1),
+      box-shadow 400ms cubic-bezier(1, 0, 0.4, 1),
+      translate 400ms cubic-bezier(1, 0, 0.4, 1);
+   animation: scaleToggle 440ms ease;
+}
+
+.eael-glossy-switcher:has(input[c-option="2"]:checked)::after {
+   translate: 68px 0;
+   transition: background-color 400ms cubic-bezier(1, 0, 0.4, 1),
+      box-shadow 400ms cubic-bezier(1, 0, 0.4, 1),
+      translate 400ms cubic-bezier(1, 0, 0.4, 1);
+   animation: scaleToggle2 440ms ease;
+}
+
+.eael-glossy-switcher[c-previous="1"]:has(input[c-option="2"]:checked)::after {
+   transform-origin: left;
+}
+
+@keyframes scaleToggle {
+   0% {
+      scale: 1 1;
+   }
+   50% {
+      scale: 1.1 1;
+   }
+   100% {
+      scale: 1 1;
+   }
+}
+
+@keyframes scaleToggle2 {
+   0% {
+      scale: 1 1;
+   }
+   50% {
+      scale: 1.2 1;
+   }
+   100% {
+      scale: 1 1;
+   }
+}
+
+/* Ensure both switcher options are clickable and properly styled */
+.eael-toggle-switch {
+   cursor: pointer;
+   user-select: none;
+}
+
+.eael-toggle-switch:hover {
+   opacity: 0.8;
+}
+
+/* Make sure the switcher container has proper positioning for the animation */
+.eael-toggle-switch-container.eael-glossy-switcher {
+   position: relative;
+}
+
+// =========== Grasshopper Style ====================
+:root {
+   --card-width: 110px;
+   --card-height: 120px;
+   --switch-bg: rgba(255, 255, 255, 0.1);
+   --switch-border-color: rgba(255, 255, 255, 0.2);
+   --text-color: #ffffff;
+   --inactive-text-color: rgba(255, 255, 255, 0.6);
+   --icon-shadow-color: rgba(0, 0, 0, 0.3);
+   --card-bg: linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.2),
+      rgba(255, 255, 255, 0.1)
+   );
+   --highlight-color: #64ffda;
+}
+
+.eael-toggle-flip-switch {
+   display: flex;
+   position: relative;
+   width: 210px;
+   height: 67px;
+   background: var(--switch-bg);
+   border-radius: 30px;
+   border: 1px solid var(--switch-border-color);
+   backdrop-filter: blur(2px) url(#switcher);
+   -webkit-backdrop-filter: blur(12px);
+   perspective: 1000px;
+   box-shadow: inset 0 0 0 1px
+         color-mix(
+            in srgb,
+            var(--c-light) calc(var(--glass-reflex-light) * 10%),
+            transparent
+         ),
+      inset 2px 1px 0px -1px color-mix(in srgb, var(--c-light)
+               calc(var(--glass-reflex-light) * 90%), transparent),
+      inset -1.5px -1px 0px -1px color-mix(in srgb, var(--c-light)
+               calc(var(--glass-reflex-light) * 80%), transparent),
+      inset -2px -6px 1px -5px color-mix(in srgb, var(--c-light)
+               calc(var(--glass-reflex-light) * 60%), transparent),
+      inset -1px 2px 3px -1px
+         color-mix(
+            in srgb,
+            var(--c-dark) calc(var(--glass-reflex-dark) * 20%),
+            transparent
+         ),
+      inset 0px -4px 1px -2px
+         color-mix(
+            in srgb,
+            var(--c-dark) calc(var(--glass-reflex-dark) * 10%),
+            transparent
+         ),
+      0px 3px 6px 0px
+         color-mix(
+            in srgb,
+            var(--c-dark) calc(var(--glass-reflex-dark) * 8%),
+            transparent
+         );
+}
+
+.eael-toggle-flip-switch input[type="radio"] {
+   display: none;
+}
+
+.eael-toggle-flip-switch .eael-switch-button {
+   flex: 1;
+   display: flex;
+   flex-direction: column;
+   align-items: center;
+   justify-content: center;
+   gap: 0;
+   cursor: pointer;
+   z-index: 2;
+   color: var(--inactive-text-color);
+   transition: all 0.3s ease;
+   -webkit-tap-highlight-color: transparent;
+   position: relative;
+   outline: none;
+}
+
+.eael-toggle-flip-switch .eael-switch-button:hover {
+   color: var(--text-color);
+}
+
+.eael-toggle-flip-switch .eael-switch-button:hover svg {
+   transform: translateY(-3px);
+}
+
+.eael-toggle-flip-switch .eael-switch-button svg {
+   transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.eael-toggle-flip-switch .eael-switch-button span {
+   font-size: 14px;
+   font-weight: 500;
+   letter-spacing: 0.5px;
+}
+
+.eael-toggle-flip-switch input[c-option="1"]:checked ~ label[data-option="1"],
+.eael-toggle-flip-switch input[c-option="2"]:checked ~ label[data-option="2"] {
+   color: var(--text-color);
+}
+
+.eael-toggle-flip-switch input[c-option="1"]:checked ~ label[data-option="2"],
+.eael-toggle-flip-switch input[c-option="2"]:checked ~ label[data-option="1"] {
+   color: var(--inactive-text-color);
+}
+
+.eael-toggle-flip-switch .eael-toggle-switch-card {
+   position: absolute;
+   top: 0;
+   left: 0;
+   width: 50%;
+   height: auto;
+   z-index: 1;
+   transform-style: preserve-3d;
+}
+
+.eael-toggle-flip-switch .eael-card-face {
+   position: absolute;
+   width: 100%;
+   height: 55%;
+   border-radius: 30px;
+   background: var(--card-bg);
+   border: 1px solid rgba(255, 255, 255, 0.15);
+   backface-visibility: hidden;
+   -webkit-backface-visibility: hidden;
+   box-shadow: inset 0 0 0 1px
+         color-mix(
+            in srgb,
+            var(--c-light) calc(var(--glass-reflex-light) * 10%),
+            transparent
+         ),
+      inset 2px 1px 0px -1px color-mix(in srgb, var(--c-light)
+               calc(var(--glass-reflex-light) * 90%), transparent),
+      inset -1.5px -1px 0px -1px color-mix(in srgb, var(--c-light)
+               calc(var(--glass-reflex-light) * 80%), transparent),
+      inset -2px -6px 1px -5px color-mix(in srgb, var(--c-light)
+               calc(var(--glass-reflex-light) * 60%), transparent),
+      inset -1px 2px 3px -1px
+         color-mix(
+            in srgb,
+            var(--c-dark) calc(var(--glass-reflex-dark) * 20%),
+            transparent
+         ),
+      inset 0px -4px 1px -2px
+         color-mix(
+            in srgb,
+            var(--c-dark) calc(var(--glass-reflex-dark) * 10%),
+            transparent
+         ),
+      0px 3px 6px 0px
+         color-mix(
+            in srgb,
+            var(--c-dark) calc(var(--glass-reflex-dark) * 8%),
+            transparent
+         );
+}
+
+.eael-toggle-flip-switch .eael-card-back {
+   transform: translateX(0px) rotateY(180deg);
+}
+
+.eael-toggle-flip-switch
+   input[c-option="2"]:checked
+   ~ .eael-toggle-switch-card {
+   animation: flipRight 0.6s cubic-bezier(0.76, 0, 0.24, 1) forwards;
+}
+
+.eael-toggle-flip-switch
+   input[c-option="1"]:checked
+   ~ .eael-toggle-switch-card {
+   animation: flipLeft 0.6s cubic-bezier(0.76, 0, 0.24, 1) forwards;
+}
+
+@keyframes flipRight {
+   0% {
+      transform: translateX(0%) rotateY(0deg);
+   }
+   50% {
+      transform: translateX(50%) rotateY(90deg) scale(1.05);
+   }
+   100% {
+      transform: translateX(100%) rotateY(180deg) scale(1);
+   }
+}
+
+@keyframes flipLeft {
+   0% {
+      transform: translateX(100%) rotateY(180deg);
+   }
+   50% {
+      transform: translateX(50%) rotateY(90deg) scale(1.05);
+   }
+   100% {
+      transform: translateX(0%) rotateY(0deg) scale(1);
+   }
+}
+
+.eael-toggle-flip-switch
+   input[c-option="1"]:checked
+   ~ label[data-option="1"]::after,
+.eael-toggle-flip-switch
+   input[c-option="2"]:checked
+   ~ label[data-option="2"]::after {
+   content: "";
+   position: absolute;
+   bottom: -5px;
+   width: 30px;
+   height: 3px;
+   border-radius: 2px;
+}

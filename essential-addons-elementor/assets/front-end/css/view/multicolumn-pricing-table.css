@@ -1,0 +1,367 @@
+.eael-multicolumn-pricing-table-wrapper * {
+  margin: 0;
+  padding: 0;
+}
+.eael-multicolumn-pricing-table-wrapper .eael-mcpt-feature-icon {
+  font-size: 20px;
+}
+.eael-multicolumn-pricing-table-wrapper svg.eael-mcpt-feature-icon {
+  height: 20px;
+  width: 20px;
+  line-height: 20px;
+}
+.eael-multicolumn-pricing-table-wrapper .eael-mcpt-cell {
+  padding: 10px;
+}
+.eael-multicolumn-pricing-table-wrapper .eael-mcpt-cell:not(.eael-mcpt-package, .eael-mcpt-corner-cell) {
+  height: 100px;
+}
+.eael-multicolumn-pricing-table-wrapper .eael-mcpt-cell.eael-mcpt-package, .eael-multicolumn-pricing-table-wrapper .eael-mcpt-cell.eael-mcpt-corner-cell {
+  height: 185px;
+  overflow: hidden;
+}
+.eael-multicolumn-pricing-table-wrapper .eael-mcpt-cell.hide {
+  display: none !important;
+}
+.eael-multicolumn-pricing-table-wrapper .eael-mcpt-cell.eael-mcpt-button-cell:not(.hide) {
+  display: -webkit-box;
+  display: -ms-flexbox;
+  display: flex;
+  -webkit-box-align: center;
+      -ms-flex-align: center;
+          align-items: center;
+}
+.eael-multicolumn-pricing-table-wrapper .eael-mcpt-feature-value {
+  display: -webkit-box;
+  display: -ms-flexbox;
+  display: flex;
+  -webkit-box-align: center;
+      -ms-flex-align: center;
+          align-items: center;
+}
+.eael-multicolumn-pricing-table-wrapper .eael-mcpt-title-cell {
+  font-weight: 500;
+  font-size: 17px;
+  display: -webkit-box;
+  display: -ms-flexbox;
+  display: flex;
+  -webkit-box-align: center;
+      -ms-flex-align: center;
+          align-items: center;
+}
+.eael-multicolumn-pricing-table-wrapper .eael-mcpt-image {
+  height: 100%;
+  width: 100%;
+}
+.eael-multicolumn-pricing-table-wrapper.title-marquee .eael-mcpt-package-marqueee {
+  overflow: hidden;
+}
+.eael-multicolumn-pricing-table-wrapper.title-marquee .eael-mcpt-package-marqueee .eael-mcpt-package-title {
+  -webkit-animation: scroll-left 10s linear infinite;
+          animation: scroll-left 10s linear infinite; /* Smooth scrolling animation */
+}
+@-webkit-keyframes scroll-left {
+  from {
+    -webkit-transform: translateX(100%);
+            transform: translateX(100%); /* Start from outside the container */
+  }
+  to {
+    -webkit-transform: translateX(-100%);
+            transform: translateX(-100%); /* End completely outside the container */
+  }
+}
+@keyframes scroll-left {
+  from {
+    -webkit-transform: translateX(100%);
+            transform: translateX(100%); /* Start from outside the container */
+  }
+  to {
+    -webkit-transform: translateX(-100%);
+            transform: translateX(-100%); /* End completely outside the container */
+  }
+}
+@-webkit-keyframes scroll-right {
+  from {
+    -webkit-transform: translateX(-100%);
+            transform: translateX(-100%); /* End completely outside the container */
+  }
+  to {
+    -webkit-transform: translateX(100%);
+            transform: translateX(100%); /* Start from outside the container */
+  }
+}
+@keyframes scroll-right {
+  from {
+    -webkit-transform: translateX(-100%);
+            transform: translateX(-100%); /* End completely outside the container */
+  }
+  to {
+    -webkit-transform: translateX(100%);
+            transform: translateX(100%); /* Start from outside the container */
+  }
+}
+.eael-multicolumn-pricing-table-wrapper.title-reflect .eael-mcpt-package .eael-mcpt-package-title {
+  -webkit-box-reflect: below -14px linear-gradient(to bottom, transparent, rgba(255, 255, 255, 0.5));
+}
+.eael-multicolumn-pricing-table-wrapper .eael-mcpt-feature-value {
+  display: -webkit-box;
+  display: -ms-flexbox;
+  display: flex;
+  -webkit-box-align: center;
+      -ms-flex-align: center;
+          align-items: center;
+}
+.eael-multicolumn-pricing-table-wrapper .eael-mcpt-columns {
+  display: -webkit-box;
+  display: -ms-flexbox;
+  display: flex;
+  position: relative; /* Establish a positioning context */
+  width: 100%;
+}
+.eael-multicolumn-pricing-table-wrapper .eael-mcpt-columns.has-featured .eael-mcpt-featured-badge {
+  position: absolute;
+  top: -34px;
+  display: -webkit-box;
+  display: -ms-flexbox;
+  display: flex;
+  -webkit-box-align: center;
+      -ms-flex-align: center;
+          align-items: center;
+  width: 100%;
+  gap: 5px;
+  left: 0;
+}
+.eael-multicolumn-pricing-table-wrapper .eael-mcpt-columns.has-featured i.eael-mcpt-featured-badge-icon {
+  font-size: 14px;
+}
+.eael-multicolumn-pricing-table-wrapper .eael-mcpt-columns.has-featured svg.eael-mcpt-featured-badge-icon {
+  height: 14px;
+  width: 14px;
+  line-height: 14px;
+}
+.eael-multicolumn-pricing-table-wrapper .eael-mcpt-column {
+  position: relative;
+}
+@media screen and (min-width: 786px) {
+  .eael-multicolumn-pricing-table-wrapper .eael-mcpt-feature {
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -webkit-box-align: center;
+        -ms-flex-align: center;
+            align-items: center;
+    -webkit-box-pack: center;
+        -ms-flex-pack: center;
+            justify-content: center;
+  }
+  .eael-multicolumn-pricing-table-wrapper .eael-mcpt-feature .eael-mcpt-feature-title {
+    display: none;
+  }
+  .eael-multicolumn-pricing-table-wrapper .eael-multicolumn-pricing-table {
+    overflow-x: auto; /* Enable horizontal scrolling */
+  }
+  .eael-multicolumn-pricing-table-wrapper .eael-mcpt-columns .eael-mcpt-column.eael-mcpt-column-0 {
+    -webkit-box-flex: 0;
+        -ms-flex: 0 0 31%;
+            flex: 0 0 31%;
+  }
+  .eael-multicolumn-pricing-table-wrapper .eael-mcpt-columns .eael-mcpt-column:not(.eael-mcpt-column-0) {
+    -webkit-box-flex: 0;
+        -ms-flex: 0 0 23%;
+            flex: 0 0 23%;
+  }
+  .eael-multicolumn-pricing-table-wrapper .eael-mcpt-columns .eael-mcpt-column {
+    z-index: 1;
+  }
+  .eael-multicolumn-pricing-table-wrapper .eael-mcpt-columns .eael-mcpt-column:first-child {
+    position: sticky; /* Stick to the left */
+    left: 0;
+    z-index: 2; /* Ensure it stays above the scrollable content */
+  }
+}
+@media screen and (max-width: 786px) {
+  .eael-multicolumn-pricing-table-wrapper .eael-mcpt-columns {
+    display: block;
+  }
+  .eael-multicolumn-pricing-table-wrapper .eael-mcpt-feature:not(.button-cell) {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+  .eael-multicolumn-pricing-table-wrapper .eael-mcpt-columns .eael-mcpt-column {
+    margin-bottom: 20px;
+  }
+  .eael-multicolumn-pricing-table-wrapper .eael-mcpt-columns .eael-mcpt-column .eael-mcpt-corner-cell,
+  .eael-multicolumn-pricing-table-wrapper .eael-mcpt-columns .eael-mcpt-column .eael-mcpt-title-cell {
+    display: none !important;
+  }
+  .eael-multicolumn-pricing-table-wrapper .eael-mcpt-feature-title {
+    display: -webkit-box;
+    display: -ms-flexbox;
+    display: flex;
+    -webkit-box-align: center;
+        -ms-flex-align: center;
+            align-items: center;
+  }
+}
+.eael-multicolumn-pricing-table-wrapper .eael-mcpt-package {
+  padding: 20px;
+}
+.eael-multicolumn-pricing-table-wrapper .eael-mcpt-package.eael-mcpt-column {
+  position: relative;
+}
+.eael-multicolumn-pricing-table-wrapper .eael-mcpt-package.eael-mcpt-featured {
+  position: relative;
+}
+.eael-multicolumn-pricing-table-wrapper .eael-mcpt-buy-button {
+  display: block;
+  background: #101828;
+  color: #fff;
+  border-radius: 4px;
+  text-align: center;
+}
+.eael-multicolumn-pricing-table-wrapper.retro-layout .eael-mcpt-column .eael-mcpt-cell:last-child.eael-mcpt-title-cell, .eael-multicolumn-pricing-table-wrapper.retro-layout .eael-mcpt-column .eael-mcpt-cell:last-child.eael-mcpt-feature {
+  border-bottom: none;
+}
+.eael-multicolumn-pricing-table-wrapper.retro-layout .eael-mcpt-column:not(:first-child) {
+  background: #f9fafb;
+}
+.eael-multicolumn-pricing-table-wrapper.retro-layout .eael-mcpt-column-0 {
+  background-color: #fff;
+}
+.eael-multicolumn-pricing-table-wrapper.retro-layout .eael-mcpt-cell.eael-mcpt-title-cell, .eael-multicolumn-pricing-table-wrapper.retro-layout .eael-mcpt-cell.eael-mcpt-feature {
+  border-bottom: 2px solid #98a2b3;
+}
+.eael-multicolumn-pricing-table-wrapper.retro-layout .eael-mcpt-package .eael-mcpt-package-title {
+  font-size: 23px;
+  color: #344054;
+  margin: 7px 0;
+}
+.eael-multicolumn-pricing-table-wrapper.retro-layout .eael-mcpt-package-old-price {
+  font-size: 25px;
+  color: #434b59;
+  text-decoration: line-through;
+  margin-right: 5px;
+  font-weight: 500;
+}
+.eael-multicolumn-pricing-table-wrapper.retro-layout .eael-mcpt-package-price,
+.eael-multicolumn-pricing-table-wrapper.retro-layout .eael-mcpt-package-period {
+  color: #101828;
+  font-size: 30px;
+  font-weight: 500;
+}
+.eael-multicolumn-pricing-table-wrapper.retro-layout .eael-mcpt-package-prices {
+  margin-bottom: 10px;
+}
+.eael-multicolumn-pricing-table-wrapper.retro-layout .eael-mcpt-featured.eael-mcpt-column {
+  background-color: #f6f6f6;
+}
+.eael-multicolumn-pricing-table-wrapper.modern-layout .eael-mcpt-columns .eael-mcpt-column-0 {
+  background: #344054;
+}
+.eael-multicolumn-pricing-table-wrapper.modern-layout .eael-mcpt-columns .eael-mcpt-package,
+.eael-multicolumn-pricing-table-wrapper.modern-layout .eael-mcpt-columns .eael-mcpt-button-cell {
+  background: #344054;
+}
+.eael-multicolumn-pricing-table-wrapper.modern-layout .eael-mcpt-collaps {
+  background: #344054;
+}
+.eael-multicolumn-pricing-table-wrapper.modern-layout .eael-mcpt-column .eael-mcpt-cell.eael-mcpt-title-cell {
+  padding: 15px 10px;
+}
+.eael-multicolumn-pricing-table-wrapper.modern-layout .eael-mcpt-column .eael-mcpt-cell.eael-mcpt-feature {
+  background: #fff;
+  padding: 15px 10px;
+}
+.eael-multicolumn-pricing-table-wrapper.modern-layout .eael-mcpt-column:nth-child(2) .eael-mcpt-cell:nth-child(2) {
+  border-top-left-radius: 4px;
+}
+.eael-multicolumn-pricing-table-wrapper.modern-layout .eael-mcpt-column:nth-child(2) .eael-mcpt-cell:last-child {
+  border-top-right-radius: 4px;
+}
+.eael-multicolumn-pricing-table-wrapper.modern-layout .eael-mcpt-column:last-child .eael-mcpt-cell:nth-child(2) {
+  border-bottom-left-radius: 4px;
+}
+.eael-multicolumn-pricing-table-wrapper.modern-layout .eael-mcpt-column:last-child .eael-mcpt-cell:last-child {
+  border-bottom-right-radius: 4px;
+}
+.eael-multicolumn-pricing-table-wrapper.modern-layout .eael-mcpt-package {
+  color: #fff;
+  text-align: center;
+}
+@media screen and (min-width: 786px) {
+  .eael-multicolumn-pricing-table-wrapper.modern-layout .eael-mcpt-package:not(:last-child) {
+    border-right: 1px solid #eaeffd;
+  }
+}
+.eael-multicolumn-pricing-table-wrapper.modern-layout .eael-mcpt-title-cell {
+  gap: 5px;
+  -webkit-box-align: center;
+      -ms-flex-align: center;
+          align-items: center;
+}
+.eael-multicolumn-pricing-table-wrapper.modern-layout .eael-mcpt-title-cell.eael-mcpt-title-icon-top, .eael-multicolumn-pricing-table-wrapper.modern-layout .eael-mcpt-title-cell.eael-mcpt-title-icon-bottom {
+  display: grid;
+}
+.eael-multicolumn-pricing-table-wrapper.modern-layout .eael-mcpt-title-cell.eael-mcpt-title-icon-left, .eael-multicolumn-pricing-table-wrapper.modern-layout .eael-mcpt-title-cell.eael-mcpt-title-icon-right {
+  display: -webkit-box;
+  display: -ms-flexbox;
+  display: flex;
+}
+.eael-multicolumn-pricing-table-wrapper.modern-layout .eael-mcpt-title-cell svg.eael-mcpt-feature-title-icon {
+  height: 16px;
+  width: 16px;
+  fill: #fff;
+}
+.eael-multicolumn-pricing-table-wrapper.modern-layout .eael-mcpt-feature-title {
+  color: #fff;
+}
+.eael-multicolumn-pricing-table-wrapper.modern-layout .eael-mcpt-package-prices {
+  font-size: 20px;
+  font-weight: 500;
+}
+.eael-multicolumn-pricing-table-wrapper.modern-layout .eael-mcpt-package-old-price-wrapper {
+  text-decoration: line-through;
+}
+@media screen and (min-width: 786px) {
+  .eael-multicolumn-pricing-table-wrapper.modern-layout .eael-mcpt-feature:not(:last-child) {
+    border-right: 1px solid #eaeffd;
+  }
+}
+@media screen and (max-width: 786px) {
+  .eael-multicolumn-pricing-table-wrapper.modern-layout .eael-multicolumn-pricing-table {
+    padding: 0 0px 20px 0;
+  }
+  .eael-multicolumn-pricing-table-wrapper.modern-layout .eael-mcpt-feature {
+    background: #fff;
+  }
+  .eael-multicolumn-pricing-table-wrapper.modern-layout .eael-mcpt-feature-title {
+    color: #344054;
+  }
+}
+.eael-multicolumn-pricing-table-wrapper .eael-mcpt-collaps {
+  display: inline-block;
+  padding: 10px;
+}
+.eael-multicolumn-pricing-table-wrapper .eael-mcpt-collaps .eael-mcpt-collaps-label:hover {
+  cursor: pointer;
+}
+.eael-multicolumn-pricing-table-wrapper .eael-mcpt-collaps .eael-collaps-icon {
+  font-size: 16px;
+}
+.eael-multicolumn-pricing-table-wrapper .eael-mcpt-collaps svg.eael-collaps-icon {
+  height: 16px;
+  width: 16px;
+  line-height: 16px;
+}
+.eael-multicolumn-pricing-table-wrapper .eael-mcpt-collaps .eael-mcpt-collaps-label {
+  display: none;
+}
+.eael-multicolumn-pricing-table-wrapper .eael-mcpt-collaps .eael-mcpt-collaps-label.show {
+  display: -webkit-box;
+  display: -ms-flexbox;
+  display: flex;
+  -webkit-box-align: center;
+      -ms-flex-align: center;
+          align-items: center;
+  gap: 4px;
+}
